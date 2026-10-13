@@ -4,8 +4,8 @@ Effective 2026-10-13. Only Jaden's explicit, scoped instruction may authorize a 
 
 | Repository | Visibility | Purpose |
 | --- | --- | --- |
-| Nebulah-Web-App-Legacy | Private, pending rename/visibility change | Preserve the former public repository and old commits. |
-| Nebulah-Web-App | Public, clean replacement pending | Free read-only console companion with fresh history. |
+| Nebulah-Web-App-Legacy | Private | Preserve the former public repository and old commits. |
+| Nebulah-Web-App | Public | Free read-only console companion with fresh history. |
 | Nebulah-Web-App-Private | Private | Development and testing for the free read-only companion. |
 | Nebulah-Link-Pro | Private | All RTE/RTM source and console-write implementation. |
 
@@ -36,5 +36,5 @@ The full implementation and tests are preserved in Nebulah-Link-Pro. The extract
 
 Windows/Neighborhood/real-console acceptance of the extracted edition is pending. Some read features currently have API support without their former full UI; the free UI provides connection, telemetry, browsing, downloads, XEX inspection and candidate export, library scanning, favorites, profiles, inventory and screen capture.
 
-The old public repo still contains mixed historical code until GitHub account verification permits its private/Legacy switch. The clean public replacement has not been created or published yet.
+The repository switch is complete. The former public repository is private as Nebulah-Web-App-Legacy. The new public Nebulah-Web-App was generated from the sanitized default branch with fresh history; its root commit is ee0b53d49f7269227a03ccd686f3a95282c83f5a. No old write commits were imported. Free development and Pro remain private. The extracted free edition remains a migration candidate pending Windows/Xbox acceptance.
 
