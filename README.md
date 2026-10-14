@@ -2,7 +2,7 @@
 
 Local Xbox 360 companion for your Windows PC or phone. The Windows bridge connects through Xbox 360 Neighborhood; your phone uses that PC on your private network.
 
-**Migration candidate:** Host tests, JavaScript syntax checks, and Python compilation checks pass. Windows/Xbox hardware acceptance of this extracted edition remains pending.
+**Migration candidate:** Host tests, JavaScript syntax checks, and Python compilation checks pass. Windows/Xbox hardware acceptance of this extracted edition remains pending. This public repository receives reviewed Basic snapshots; day-to-day development and hardware trials stay in local/private workspaces.
 
 ## Get started
 
@@ -33,6 +33,8 @@ Keep `.local` when updating; it contains your saved settings and library. XEX st
 ## Development
 
 Run `python -m unittest discover -s tests -v`, `node --check dist/app.js`, and `python -m compileall -q bridge tools`.
+
+After hardware review, `tools/package-beta.ps1` creates a source ZIP from the exact committed Git bytes and prints its SHA-256. `-Preview` creates a local candidate from the current commit. Neither command publishes a release.
 
 Read [repository policy](docs/REPOSITORY_POLICY.md) and [agent instructions](AGENTS.md) before changing or releasing this project.
 

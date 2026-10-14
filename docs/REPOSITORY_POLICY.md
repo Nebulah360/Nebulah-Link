@@ -9,7 +9,7 @@ Effective 2026-10-14. Basic is public source and read-only. A $5 one-time purcha
 | Nebulah-Link-Pro | Private | Basic features plus console writes and RTE/RTM. |
 | Nebulah-Web-App-Legacy | Private | Archive of the former public repository and its history. |
 
-The separate Nebulah-Web-App-Private remote is not an automatically synchronized copy of Main. Never publish its history or Pro implementation into Basic.
+The separate Nebulah-Web-App-Private remote is not an automatically synchronized copy of Main. Never publish its history or Pro implementation into Basic. Follow the former Legacy publication model: develop and test in local/private workspaces, then promote a reviewed Basic snapshot. Legacy itself remains a private preservation archive; do not copy its mixed-feature history.
 
 ## Feature boundary
 
@@ -28,3 +28,5 @@ Pro is intended to ship as one Windows executable. A bundled executable is not s
 ## Release gate
 
 Release each edition only after relevant host tests, Windows/browser checks, real-console smoke tests, and exact artifact review. Structural XEX checks do not prove authenticity or console compatibility. Use only tracked source assets in packages; exclude `.local`, backups, tests, secrets, and console binaries. Do not claim a stable release from repository or packaging checks alone.
+
+Public `main` is curated release source, not a daily development branch. Before a public update, review the exact diff from the previous release, confirm that all public operations remain read-only, run the host checks, record hardware evidence, and run `tools/package-beta.ps1`. The script archives committed Git bytes and prints the archive SHA-256; it does not publish or mark the build stable. Keep unverified candidates local. Never synchronize Main or Pro wholesale into this repository, rewrite public history, or remove earlier releases as part of a routine update.

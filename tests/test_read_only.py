@@ -4,6 +4,7 @@ import http.client
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -99,8 +100,9 @@ class ReadOnlyTests(unittest.TestCase):
         finally:endpoint.shutdown();thread.join();endpoint.server_close()
 
     def test_public_manifest_and_adapter_have_no_paid_implementations(self):
-        for path in ROOT.rglob('*'):
-            if path.is_file():self.assertNotIn(path.name,('rte.py','rte.js','plugin_adapter.py','module_runtime.ps1','upload_checkpoint.py','controller.js'))
+        tracked=subprocess.check_output(['git','ls-files','-z'],cwd=ROOT).decode().split('\0')
+        for path in tracked:
+            self.assertNotIn(Path(path).name,('rte.py','rte.js','plugin_adapter.py','module_runtime.ps1','upload_checkpoint.py','controller.js'))
         ps=(ROOT/'bridge/neighborhood.ps1').read_text()
         cases=set(re.findall(r"^    '([^']+)' \{",ps,re.M))
         self.assertEqual(cases,set(access_policy.ADAPTER_ACTIONS))
