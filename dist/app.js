@@ -20,10 +20,21 @@ async function task(work){
   $('message').textContent='Reading…';
   try{await work();$('message').textContent='Done.';}catch(error){$('message').textContent=error.message;}
 }
+const knownTitles={'415607D1':'Call of Duty 2','415607E6':'Call of Duty 4','4156081C':'Call of Duty: World at War','41560817':'Call of Duty: Modern Warfare 2','41560855':'Call of Duty: Black Ops','415608CB':'Call of Duty: Modern Warfare 3','41560914':'Call of Duty: Advanced Warfare','415608FC':'Call of Duty: Ghosts','415608C3':'Call of Duty: Black Ops 2','4156091D':'Call of Duty: Black Ops 3'};
+function runningTitleName(title){
+  const path=title?.executable||'',file=path.split(/[\\/]/).pop();
+  if(title?.title_id==='FFFE07D1'){
+    if(/^(?:360Dash(?:Rev\d+)?|NebulahDash)\.xex$/i.test(file))return 'Nebulah Dash';
+    if(/^Aurora\.xex$/i.test(file)||/[\\/]Aurora[\\/]default\.xex$/i.test(path))return 'Aurora';
+    if(/^dash\.xex$/i.test(file))return 'Xbox 360 Dashboard';
+  }
+  if(typeof title?.name==='string'&&title.name.trim()&&!/\.xex$/i.test(title.name.trim()))return title.name.trim();
+  return knownTitles[title?.title_id]||(title?.title_id?'Title name unavailable':'Unavailable');
+}
 function showStatus(value){
   connected=true;
   $('connection').textContent='Connected · read-only console access';
-  $('title').textContent=value.current_title?.executable?.split(/[\\/]/).pop()||'Unavailable';
+  $('title').textContent=runningTitleName(value.current_title);
   $('cpu').textContent=value.temperatures?.cpu?value.temperatures.cpu+' °C':'Unavailable';
   $('gpu').textContent=value.temperatures?.gpu?value.temperatures.gpu+' °C':'Unavailable';
   $('kernel').textContent=value.kernel||'Unavailable';

@@ -343,7 +343,10 @@ class Bridge:
         # Only explicit status fields leave the bridge. No raw adapter payloads.
         result={'type':str(s.get('type','Unavailable'))[:64], 'kernel':str(s.get('kernel','Unavailable'))[:64], 'drives':self.drives, 'storage':storage, 'adapter_version':ADAPTER_VERSION if s.get('adapter_version')==ADAPTER_VERSION else None, **sanitize_telemetry(s)}
         self.last_title=result['current_title']
-        if self.discord_presence:self.discord_presence.update(self.discord_title())
+        cached_title=self.discord_title()
+        name=cached_title.get('name')
+        if isinstance(name,str) and 2<=len(name.strip())<=110 and name.isprintable():result['current_title']['name']=name.strip()
+        if self.discord_presence:self.discord_presence.update(cached_title)
         return {**result,'edition':'free','read_only':True}
 
 
