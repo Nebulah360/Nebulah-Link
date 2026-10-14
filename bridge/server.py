@@ -181,6 +181,11 @@ def safe_path(path, drives):
         raise ValueError('Storage root has not been discovered on this console.')
     return path
 
+def protected_private_file(path):
+    if not isinstance(path,str):return False
+    name=re.sub(r'[^a-z0-9]','',path.rsplit('\\',1)[-1].lower())
+    return 'cpukey' in name or 'keyvault' in name or name.startswith('kv')
+
 def normalize_directory_entries(raw, directory):
     """Accept leaf names or exact direct-child paths; never flatten other paths."""
     if not isinstance(raw,list):
@@ -276,6 +281,8 @@ class Bridge:
 
     def adapter(self, action, **kwargs):
         assert_allowed(action, ADAPTER_ACTIONS)
+        if action=='download-file' and protected_private_file(kwargs.get('path','')):
+            raise ValueError('Private console key files require a separate confirmed read.')
         if self.recovery_hold is not None:raise self.recovery_error()
         self.active_adapter=operation_group(action)
         try:return self._adapter(action, **kwargs)
@@ -393,6 +400,7 @@ class Bridge:
             return self.workspace().dispatch(action,data)
         if action=='files/download':
             path=safe_path(data.get('path'),self.drives)
+            if protected_private_file(path):raise ValueError('Private console key files require a separate confirmed read.')
             info=self.adapter('file-info',path=path)
             size=info.get('size')
             if info.get('directory') is not False or type(size) is not int or not 0<=size<=128*1024*1024:
@@ -714,7 +722,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.session_cookie=BrowserSessions.cookie(session)
                 terminal_request_success(action,{'awaiting_console':True})
                 return self.reply(200,{'awaiting_console':True})
-            if session in sessions.waiting and action not in ('connect','session/resume','session/logout','launcher/settings','launcher/save','settings/read','settings/save'):
+            if session in sessions.waiting and action not in ('connect','recovery/status','session/resume','session/logout','launcher/settings','launcher/save','settings/read','settings/save'):
                 terminal_status('REQUEST_FAILED',group=self._operation,action=action,code='SESSION_CONFLICT',http=409)
                 return self.reply(409,{'error':'Pairing saved. Connect a console first.'})
             if action.startswith('session/'):

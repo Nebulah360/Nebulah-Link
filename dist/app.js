@@ -49,7 +49,7 @@ function fileRow(file,folder){
   const path=folder.replace(/\\?$/,'\\')+file.name;
   if(file.directory)row.append(button('Open',async()=>{$('folder').value=path+'\\';await browse();}));
   else{
-    row.append(button('Download',async()=>{const value=await api('files/download',{path});const bytes=Uint8Array.from(atob(value.base64),c=>c.charCodeAt(0));saveDownload(value.filename,bytes);$('inspection').textContent='Download SHA-256: '+value.sha256;}));
+    if(!/(cpukey|keyvault|^kv)/.test(file.name.toLowerCase().replace(/[^a-z0-9]/g,'')))row.append(button('Download',async()=>{const value=await api('files/download',{path});const bytes=Uint8Array.from(atob(value.base64),c=>c.charCodeAt(0));saveDownload(value.filename,bytes);$('inspection').textContent='Download SHA-256: '+value.sha256;}));
     if(/\.xex$/i.test(file.name))row.append(button('Inspect',()=>inspect(path)));
   }
   row.append(button('Favorite',()=>api('favorites/save',{path,name:file.name,directory:!!file.directory,mode:''})));
