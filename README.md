@@ -1,41 +1,38 @@
-# Nebulah Link — Basic
+# Nebulah Link Basic
 
-Local Xbox 360 companion for your Windows PC or phone. The Windows bridge connects through Xbox 360 Neighborhood; your phone uses that PC on your private network.
+Nebulah Link brings your Xbox 360 into a browser on your Windows PC. It connects through your installed Xbox 360 Neighborhood. A phone on the same trusted network can view live console status through the PC.
 
-**Migration candidate:** Host tests, JavaScript syntax checks, and Python compilation checks pass. Windows/Xbox hardware acceptance of this extracted edition remains pending. This public repository receives reviewed Basic snapshots; day-to-day development and hardware trials stay in local/private workspaces.
+This is an early-access build. Console compatibility has been checked on a limited setup; more hardware testing is needed before a stable release.
 
-## Get started
+## Start on Windows
 
-1. Install Xbox 360 Neighborhood and confirm it connects to your console.
-2. Download and extract the complete project, then run **Start Nebulah Link.cmd** on Windows.
-3. Connect to Neighborhood's default console or enter a private console IP.
+1. Install Xbox 360 Neighborhood and confirm it can connect to your console.
+2. Download this repository as a ZIP and extract the **whole** folder.
+3. Double-click **Start Nebulah Link.cmd**. The launcher needs Python 3.10 or newer; it can offer to install Python through WinGet if needed.
+4. Keep the bridge window open. In the browser, connect using Neighborhood's default console or enter your console's private IP address.
 
-For phone access, open the LAN URL printed by the bridge and enter the Phone PIN displayed on the PC. Phone access shows status only; console files and private data stay on the bridge PC. Keep the bridge window open. HTTP is unencrypted; use a trusted private network and never forward the bridge port.
+Nebulah Link does not include Xbox SDK files, console binaries, or games.
 
-## Current Basic features
+## What Basic can do
 
-- Console status, current title, temperatures, screen capture, and module inventory.
-- Discovered storage roots, folder browsing, capacity/health reads, and individual file downloads up to 128 MiB.
-- XEX metadata, SHA-256 checks, and untrusted baseline proposals with title and provenance.
-- Local library scanning, favorites, saved profiles, cached metadata, and existing launch history.
-- Storage health and exact-hash comparison of saved XEX observations.
-- Per-game related-content discovery and structural title-update inspection.
-- Local settings and accent color. Read API routes also retain optional metadata lookup and Discord activity support.
+- Show console status, the current title, temperatures, modules, and screen captures on the PC.
+- Discover storage roots, browse folders, check capacity and health, and download individual files up to 128 MiB on the PC.
+- Inspect XEX metadata and compare saved file hashes. A matching hash does not prove that an XEX is safe or compatible.
+- Scan a local game library, save favorites, and inspect related content and title update structure.
+- Save app settings and library data on the PC.
 
-Basic is read-only. Unknown console writes are rejected at the HTTP, bridge, and adapter boundaries. Local favorites, library records, and settings remain editable on the PC.
+Basic does not change console files, settings, profiles, or game memory. Nebulah Link Pro is a separate product for console controls.
 
-## Pro boundary
+## View status on your phone
 
-Nebulah Link Pro is private and owns console writes, including uploads, inspected launches, power, controller input, notifications, DashLaunch, plugins, RTE/RTM, and profile/stat edits. The planned $5 one-time purchase will authorize a Pro download from the website; code entry in Basic will not unlock writes here. Checkout and license issuance are not implemented yet. Pro is still a prior core snapshot; parity with the latest uncommitted Main work remains pending.
+Use the LAN address printed by the bridge, then enter the Phone PIN shown in the PC browser. The phone view is limited to status. Console files and private console information are accessible only from the bridge PC. If Windows Firewall blocks the phone, run **Allow Phone Through Firewall.cmd** on the PC.
 
-Keep `.local` when updating; it contains your saved settings and library. XEX structure and digest checks do not prove safety, authenticity, or console compatibility. No games, console binaries, or proprietary SDK files are included.
+The local phone connection uses unencrypted HTTP. Use a trusted private network and do not forward the bridge port to the internet.
 
-## Development
+## Keep your data when updating
 
-Run `python -m unittest discover -s tests -v`, `node --check dist/app.js`, and `python -m compileall -q bridge tools`.
+The `.local` folder beside the launcher holds saved settings and library data. Keep that folder when replacing the app files with a newer version.
 
-After hardware review, `tools/package-beta.ps1` creates a source ZIP from the exact committed Git bytes and prints its SHA-256. `-Preview` creates a local candidate from the current commit. Neither command publishes a release.
+For help, include the displayed support code and what you were doing. Do not share private console information.
 
-Read [repository policy](docs/REPOSITORY_POLICY.md) and [agent instructions](AGENTS.md) before changing or releasing this project.
-
-[Website](https://nebulah.app/) · [Discord](https://discord.gg/QCQcXaz6RU) · [Issues](https://github.com/Nebulah360/Nebulah-Link/issues)
+[Website](https://nebulah.app/) · [Discord](https://discord.gg/QCQcXaz6RU) · [Report an issue](https://github.com/Nebulah360/Nebulah-Link/issues)

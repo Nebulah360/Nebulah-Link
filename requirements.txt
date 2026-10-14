@@ -1,2 +1,0 @@
-# The free bridge uses Python 3.10+ standard-library modules.
-# Windows console reads require an installed Xbox 360 Neighborhood/XDevkit COM registration.

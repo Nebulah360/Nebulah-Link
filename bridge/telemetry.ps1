@@ -53,7 +53,7 @@ function Convert-ConsoleDrives($Value) {
   }
   return $roots
 }
-# Read-only protocol mappings. See docs/TELEMETRY.md for pinned sources.
+# Read-only protocol mappings.
 function Read-TelemetryReply($Console, $Connection, [string]$Command) {
   $response = ''
   try { [void]$Console.SendTextCommand($Connection, $Command, [ref]$response) }
