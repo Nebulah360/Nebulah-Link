@@ -1,28 +1,30 @@
 # Nebulah Link repository and release boundaries
 
-Effective 2026-10-14. Jaden approved the Basic write scope: uploads, launches, power, and controller input.
+Effective 2026-10-14. Basic is public source and read-only. A $5 one-time purchase will authorize a Pro download through the website. Code entry in Basic will authorize that download only; it will not turn Basic into Pro.
 
 | Repository | Visibility | Role |
 | --- | --- | --- |
-| Nebulah-Web-App-main | Local core | Existing development workspace; leave its work and history in place. |
-| Nebulah-Link | Public | Basic companion with the limited write scope below. |
-| Nebulah-Link-Pro | Private | Basic features plus the full core, RTE/RTM, and other console writes. |
+| Nebulah-Web-App-main | Local core | Existing development workspace; preserve its work and history. |
+| Nebulah-Link | Public | Read-only companion and download entry point when licensing is ready. |
+| Nebulah-Link-Pro | Private | Basic features plus console writes and RTE/RTM. |
 | Nebulah-Web-App-Legacy | Private | Archive of the former public repository and its history. |
 
-The separate Nebulah-Web-App-Private remote still exists. Do not treat it as an automatically synchronized copy of Main or publish its history to Basic.
+The separate Nebulah-Web-App-Private remote is not an automatically synchronized copy of Main. Never publish its history or Pro implementation into Basic.
 
 ## Feature boundary
 
-Basic may read console status, telemetry, storage, files, and metadata. Its only approved console writes are explicit file uploads, inspected title launches, power commands, and bounded controller input. This is a scope decision, not a claim that the extracted Basic build implements those writes today.
+Basic may read console status, telemetry, storage, files, library metadata, related game content, title-update headers, and local diagnostic state. It must reject console writes at the HTTP, bridge, and adapter boundaries. Its local favorites, settings, and saved library may still change on the PC.
 
-For Basic uploads, require an explicit destination, size limits, no silent overwrite, and remote read-back verification. For launches, use a fresh server-inspected XEX and a short-lived single-use ticket; reject DLLs and plugins through the title-launch route. Power and controller actions require an authenticated, explicit user action; bound controller input so it cannot remain held indefinitely. Discover storage roots instead of assuming a drive letter.
+Pro owns uploads, inspected title launches, power, bounded controller input, notifications, file changes, DashLaunch, plugin install/load/unload/force release, RTE/RTM, profile/stat edits, and memory writes. Existing safety and beta gates remain in force. Plugin install and direct unload are not yet proven available on hardware. A purchase or license must never bypass a recovery hold, confirmation, read-back check, rollback, or capability check.
 
-Pro contains Basic features and owns RTE/RTM, profile and game/stat editing, memory writes, notifications, file rename/delete, DashLaunch and plugin changes, and any other console-write implementation. Keep Pro source, tests, UI, offsets, recipes, and binaries out of Basic. Do not use a Basic setting or payment switch to bypass an unavailable capability.
+Private console data keeps explicit consent, temporary display, and no-log/no-storage rules. CPU-key display requires fresh confirmation for each read. Phone sessions may read allowlisted status and recovery state only; they cannot request private console data or writes.
 
-Private console data keeps its explicit-consent, temporary-display, and no-log/no-storage rules. CPU-key display requires fresh confirmation for each read. Phone routes cannot retrieve private console data.
+## Payment and distribution
+
+Website checkout and license issuance are not implemented. Stripe is a candidate, not a selected dependency. Until the website provides a verified redemption and download endpoint, Basic must not display a working code-entry control or claim that payment is available. A code entered into public source cannot protect Pro code. The website must validate one-time purchase and deliver only a reviewed Pro build; neither edition may embed a signing secret.
+
+Pro is intended to ship as one Windows executable. A bundled executable is not strong obfuscation; source extraction and local patching remain possible. Keep proprietary SDK files, console binaries, keys, and local data outside the package. Sign distributable bytes when a signing identity is available and publish their SHA-256.
 
 ## Release gate
 
-Release each edition as a polished project only after its implemented features pass relevant host tests, Windows/browser checks, and real-console smoke tests. Review exact package bytes and hardware evidence; structural XEX checks alone do not prove authenticity or compatibility. Keep recovery holds, read-back checks, and rollback for writes. Never ship demo controls or simulated console results in production.
-
-Basic currently remains an extracted read-only migration candidate; its approved write categories still need implementation and hardware acceptance. Pro is a prior core snapshot and has not yet incorporated all uncommitted work in Main. Neither edition gains a stable-release claim from this policy change. Pricing, billing, and entitlement enforcement are not implemented.
+Release each edition only after relevant host tests, Windows/browser checks, real-console smoke tests, and exact artifact review. Structural XEX checks do not prove authenticity or console compatibility. Use only tracked source assets in packages; exclude `.local`, backups, tests, secrets, and console binaries. Do not claim a stable release from repository or packaging checks alone.

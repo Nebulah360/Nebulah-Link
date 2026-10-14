@@ -1,6 +1,13 @@
 'use strict';
 const $=id=>document.getElementById(id);
 let connected=false, inspectionId=null, candidate=null, keyTimeout=null;
+function setPcAccess(pc){
+  document.querySelector('nav').hidden=!pc;
+  for(const element of document.querySelectorAll('.view'))element.hidden=!pc||element.id!=='storage';
+  $('storage-health-panel').hidden=!pc;
+  $('target').parentElement.hidden=!pc;
+  $('connect-form').querySelector('button').hidden=!pc;
+}
 async function api(action,data={},authorization){
   const headers={'Content-Type':'application/json'};
   if(authorization)headers.Authorization='Bearer '+authorization;
@@ -57,7 +64,7 @@ async function library(){
   const value=await api('library/list',{view:'files'});
   const files=value.files||[];
   $('library-files').replaceChildren(...files.map(file=>{
-    const parts=file.path.split('\\'),name=parts.pop();return fileRow({name,directory:false},parts.join('\\'));
+    const parts=file.path.split('\\'),name=parts.pop(),row=fileRow({name,directory:false},parts.join('\\'));if(/\.xex$/i.test(name))row.append(button('Find content',()=>addons(file.path)));return row;
   }));
   const saved=await api('favorites/list');
   $('favorites').replaceChildren(...[...(saved.favorites||[]),...(saved.recent||[])].map(item=>{
@@ -67,18 +74,32 @@ async function library(){
     return row;
   }));
 }
+async function addons(gamePath){
+  const value=await api('games/addons',{path:gamePath});
+  const rows=[];
+  for(const [kind,items] of Object.entries(value.items||{}))for(const item of items){
+    const row=document.createElement('div');row.className='file';
+    const label=document.createElement('span');label.className='name';label.textContent=kind.replaceAll('_',' ')+' ? '+item.name+' ? '+item.source;row.append(label);
+    if(kind==='title_updates')row.append(button('Inspect update',async()=>{$('addon-inspection').textContent=JSON.stringify(await api('games/title-update',{game_path:gamePath,path:item.path}),null,2);$('addon-inspection').hidden=false;}));
+    rows.push(row);
+  }
+  $('addons').replaceChildren(...rows);
+  if(!rows.length)$('addons').textContent=value.incomplete?'Search incomplete; no candidates found.':'No related content found.';
+  $('addon-inspection').hidden=true;
+}
 async function profiles(){
   const value=await api('profiles/list');
   $('profiles').replaceChildren(...value.profiles.map(item=>button(item.name,async()=>{$('target').value=item.target;showStatus(await api('connect',{target:item.target}));})));
 }
 function clearPrivate(){clearTimeout(keyTimeout);$('private-key').textContent='';}
 function selectTab(name){
-  clearPrivate();for(const element of document.querySelectorAll('.view'))element.hidden=element.id!==name;
+  clearPrivate();for(const element of document.querySelectorAll('.view'))element.hidden=element.id!==name;$('storage-health-panel').hidden=name!=='storage';
   for(const element of document.querySelectorAll('[data-tab]'))element.classList.toggle('selected',element.dataset.tab===name);
 }
 for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>task(async()=>{selectTab(element.dataset.tab);if(element.dataset.tab==='library')await library();if(element.dataset.tab==='settings'){const value=await api('settings/read');$('default-ip').value=value.default_console_ip;await profiles();}});
 $('connect-form').onsubmit=event=>{event.preventDefault();task(async()=>{clearPrivate();inspectionId=null;const recovery=await api('recovery/status');if(recovery.recovery_required&&!confirm('A previous read failed. Confirm the console is responsive before reconnecting.'))return;showStatus(await api('connect',{target:$('target').value.trim(),recovery_confirmed:recovery.recovery_required}));});};
 $('refresh').onclick=()=>task(async()=>showStatus(await api('status')));
+$('storage-health').onclick=()=>task(async()=>{$('storage-health-result').textContent=JSON.stringify(await api('storage/health'),null,2);});
 $('discover').onclick=()=>task(async()=>{const value=await api('storage/discover');$('drive').replaceChildren(...value.drives.map(root=>new Option(root,root)));$('folder').value=$('drive').value;});
 $('drive').onchange=()=>{$('folder').value=$('drive').value;};
 $('browse-form').onsubmit=event=>{event.preventDefault();task(browse);};
@@ -93,10 +114,10 @@ $('cpu-key').onclick=()=>task(async()=>{clearPrivate();if(!confirm('Read and tem
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearPrivate();});
 $('settings-form').onsubmit=event=>{event.preventDefault();task(()=>api('settings/save',{default_console_ip:$('default-ip').value.trim(),allow_writes:false}));};
 $('profile-form').onsubmit=event=>{event.preventDefault();task(async()=>{await api('profiles/save',{name:$('profile-name').value,target:$('profile-target').value});await profiles();});};
-$('phone-form').onsubmit=event=>{event.preventDefault();task(async()=>{showStatus((await api('session/phone-pair',{pin:$('phone-pin').value})).status);$('phone-pin').value='';});};
+$('phone-form').onsubmit=event=>{event.preventDefault();task(async()=>{const value=await api('session/phone-pair',{pin:$('phone-pin').value});setPcAccess(false);showStatus(value.status);$('phone-pin').value='';});};
 $('show-pin').onclick=()=>task(async()=>{const value=await api('session/phone-pin');$('pin-display').textContent=value.url+' · PIN '+value.pin;setTimeout(()=>$('pin-display').textContent='',60000);});
 $('sign-out').onclick=()=>task(async()=>{await api('session/logout');clearPrivate();connected=false;inspectionId=null;$('connection').textContent='Signed out.';$('screen').removeAttribute('src');$('screen').hidden=true;});
 $('accent').value=localStorage.getItem('nebulah-free-accent')||'#74b5d6';
 document.documentElement.style.setProperty('--accent',$('accent').value);
 $('accent').oninput=()=>{document.documentElement.style.setProperty('--accent',$('accent').value);localStorage.setItem('nebulah-free-accent',$('accent').value);};
-task(async()=>{const pair=new URLSearchParams(location.hash.slice(1)).get('pair');history.replaceState(null,'',location.pathname);if(pair)await api('session/pair',{},pair);else{try{const value=await api('session/resume');if(value.status){showStatus(value.status);return;}}catch{}await api('session/local-pair');}$('connection').textContent='PC paired. Connect a console to begin.';});
+task(async()=>{const pair=new URLSearchParams(location.hash.slice(1)).get('pair');history.replaceState(null,'',location.pathname);if(pair)await api('session/pair',{},pair);else{try{const value=await api('session/resume');if(value.status){setPcAccess(value.pc!==false);showStatus(value.status);return;}}catch{}await api('session/local-pair');}$('connection').textContent='PC paired. Connect a console to begin.';});

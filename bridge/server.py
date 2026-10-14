@@ -678,6 +678,9 @@ class Handler(BaseHTTPRequestHandler):
             if action.startswith(('discord/','launcher/','settings/')) and not self.local_client():
                 terminal_status('REQUEST_FAILED',group=operation_group(action),action=action,code='ACCESS_DENIED',http=403)
                 return self.reply(403,{'error':'Control PC settings on the bridge PC.'})
+            if not self.local_client() and action not in ('status','recovery/status','session/resume','session/logout','session/phone-pair'):
+                terminal_status('REQUEST_FAILED',group=operation_group(action),action=action,code='ACCESS_DENIED',http=403)
+                return self.reply(403,{'error':'Open this console data on the bridge PC.'})
             if action=='session/local-pair':
                 if not self.local_client() or body:
                     terminal_status('REQUEST_FAILED',group='session',action=action,code='ACCESS_DENIED',http=403)
@@ -719,7 +722,7 @@ class Handler(BaseHTTPRequestHandler):
                     terminal_status('REQUEST_FAILED',group='session',action=action,code='ACCESS_DENIED',http=401)
                     return self.reply(401,{'error':'Browser session is unavailable.'})
                 if action=='session/resume':
-                    result={'awaiting_console':True} if session in sessions.waiting else {'status':self.server.bridge.dispatch('status',{})}
+                    result={'awaiting_console':True,'pc':self.local_client()} if session in sessions.waiting else {'status':self.server.bridge.dispatch('status',{}),'pc':self.local_client()}
                 elif action=='session/logout':
                     sessions.logout(session)
                     if self.local_client():self.server.admin_control=False

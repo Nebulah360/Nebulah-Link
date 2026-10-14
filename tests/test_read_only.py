@@ -78,6 +78,26 @@ class ReadOnlyTests(unittest.TestCase):
                 dispatch.assert_not_called()
         finally:endpoint.shutdown();thread.join();endpoint.server_close()
 
+    def test_phone_cannot_request_private_console_data(self):
+        endpoint=server.HTTPServer(('127.0.0.1',0),server.Handler)
+        port=endpoint.server_address[1]
+        endpoint.allowed_hosts={f'127.0.0.1:{port}'}
+        endpoint.token='test-token';endpoint.browser_sessions=BrowserSessions()
+        endpoint.bridge=server.Bridge('powershell')
+        cookie='nebulah_session='+endpoint.browser_sessions.create()
+        thread=threading.Thread(target=endpoint.serve_forever,daemon=True);thread.start()
+        try:
+            with patch.object(server.Handler,'local_client',return_value=False), patch.object(endpoint.bridge,'dispatch') as dispatch:
+                for action in ('browse','files/download','console/screenshot','cpu-key/prepare','profiles/list'):
+                    connection=http.client.HTTPConnection('127.0.0.1',port,timeout=3)
+                    connection.request('POST','/api/'+action,body='{}',headers={
+                        'Host':f'127.0.0.1:{port}','Origin':f'http://127.0.0.1:{port}',
+                        'Content-Type':'application/json','Cookie':cookie})
+                    response=connection.getresponse();response.read()
+                    self.assertEqual(response.status,403,action);connection.close()
+                dispatch.assert_not_called()
+        finally:endpoint.shutdown();thread.join();endpoint.server_close()
+
     def test_public_manifest_and_adapter_have_no_paid_implementations(self):
         for path in ROOT.rglob('*'):
             if path.is_file():self.assertNotIn(path.name,('rte.py','rte.js','plugin_adapter.py','module_runtime.ps1','upload_checkpoint.py','controller.js'))
