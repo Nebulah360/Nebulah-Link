@@ -1,40 +1,28 @@
-# Nebulah Link repository and access policy
+# Nebulah Link repository and release boundaries
 
-Effective 2026-10-13. Only Jaden's explicit, scoped instruction may authorize a public console-write exception.
+Effective 2026-10-14. Jaden approved the Basic write scope: uploads, launches, power, and controller input.
 
-| Repository | Visibility | Purpose |
+| Repository | Visibility | Role |
 | --- | --- | --- |
-| Nebulah-Web-App-Legacy | Private | Preserve the former public repository and old commits. |
-| Nebulah-Web-App | Public | Free read-only console companion with fresh history. |
-| Nebulah-Web-App-Private | Private | Development and testing for the free read-only companion. |
-| Nebulah-Link-Pro | Private | All RTE/RTM source and console-write implementation. |
+| Nebulah-Web-App-main | Local core | Existing development workspace; leave its work and history in place. |
+| Nebulah-Link | Public | Basic companion with the limited write scope below. |
+| Nebulah-Link-Pro | Private | Basic features plus the full core, RTE/RTM, and other console writes. |
+| Nebulah-Web-App-Legacy | Private | Archive of the former public repository and its history. |
+
+The separate Nebulah-Web-App-Private remote still exists. Do not treat it as an automatically synchronized copy of Main or publish its history to Basic.
 
 ## Feature boundary
 
-All console reads are free: telemetry, status, browsing, downloads, file metadata/hash checks, module inventory, and read-only RTE/RTM inspection.
+Basic may read console status, telemetry, storage, files, and metadata. Its only approved console writes are explicit file uploads, inspected title launches, power commands, and bounded controller input. This is a scope decision, not a claim that the extracted Basic build implements those writes today.
 
-All RTE/RTM code stays private, including read-only implementation, tests, UI, offsets, recipes, and binary modules. Free RTE/RTM read access requires a separately distributed private-source component; this integration is not yet shipped in the extracted free edition.
+For Basic uploads, require an explicit destination, size limits, no silent overwrite, and remote read-back verification. For launches, use a fresh server-inspected XEX and a short-lived single-use ticket; reject DLLs and plugins through the title-launch route. Power and controller actions require an authenticated, explicit user action; bound controller input so it cannot remain held indefinitely. Discover storage roots instead of assuming a drive letter.
 
-Console writes belong exclusively in Pro and require the planned one-time paid entitlement: uploads, renames/deletes, launches, power controls, notifications, controller input, plugin changes, DashLaunch configuration changes, memory writes, and game/stat edits.
+Pro contains Basic features and owns RTE/RTM, profile and game/stat editing, memory writes, notifications, file rename/delete, DashLaunch and plugin changes, and any other console-write implementation. Keep Pro source, tests, UI, offsets, recipes, and binaries out of Basic. Do not use a Basic setting or payment switch to bypass an unavailable capability.
 
-Local PC/browser preferences, profiles, favorites, cache, candidate JSON, downloads, and existing launch history remain free. They must never dispatch a console write. Private console reads keep their explicit-consent, temporary-display, and no-log/no-storage rules.
+Private console data keeps its explicit-consent, temporary-display, and no-log/no-storage rules. CPU-key display requires fresh confirmation for each read. Phone routes cannot retrieve private console data.
 
-## Enforcement and releases
+## Release gate
 
-- Public code and packages contain no RTE/RTM or console-write implementation, dormant handlers, hidden controls, recipes, offsets, or binary modules.
-- Reject unsupported operations at HTTP, bridge, and console adapter boundaries. No Admin mode, saved setting, or public payment switch may enable a write.
-- Read routes must not call console-write helpers. Connecting must not send notifications, load modules, or clean up console files.
-- Run the read-only boundary tests and relevant read-feature tests before publishing.
-- Do not mirror private source or Git history into the clean public repo. Publish sanitized files with fresh history.
-- Preserve the mixed implementation privately before removing it from the free development tree.
-- Payment does not override hardware acceptance, consent, exact-build checks, recovery holds, or verification gates. Pricing, payment processing, license issuance, and entitlement enforcement remain unimplemented.
-- Historical public copies and forks are not retracted by this migration.
+Release each edition as a polished project only after its implemented features pass relevant host tests, Windows/browser checks, and real-console smoke tests. Review exact package bytes and hardware evidence; structural XEX checks alone do not prove authenticity or compatibility. Keep recovery holds, read-back checks, and rollback for writes. Never ship demo controls or simulated console results in production.
 
-## Current migration evidence
-
-The full implementation and tests are preserved in Nebulah-Link-Pro. The extracted read-only source passes 44 host tests, JavaScript syntax checks, and Python compilation checks. It retains the local workspace format and free read APIs while omitting paid code.
-
-Windows/Neighborhood/real-console acceptance of the extracted edition is pending. Some read features currently have API support without their former full UI; the free UI provides connection, telemetry, browsing, downloads, XEX inspection and candidate export, library scanning, favorites, profiles, inventory and screen capture.
-
-The repository switch is complete. The former public repository is private as Nebulah-Web-App-Legacy. The new public Nebulah-Web-App was generated from the sanitized default branch with fresh history; its root commit is ee0b53d49f7269227a03ccd686f3a95282c83f5a. No old write commits were imported. Free development and Pro remain private. The extracted free edition remains a migration candidate pending Windows/Xbox acceptance.
-
+Basic currently remains an extracted read-only migration candidate; its approved write categories still need implementation and hardware acceptance. Pro is a prior core snapshot and has not yet incorporated all uncommitted work in Main. Neither edition gains a stable-release claim from this policy change. Pricing, billing, and entitlement enforcement are not implemented.

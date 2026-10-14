@@ -1,4 +1,4 @@
-"""Free read-only Nebulah Link bridge. All console mutations and RTE/RTM source live privately."""
+"""Current read-only Nebulah Link Basic bridge; Pro owns RTE/RTM."""
 import webbrowser
 import argparse, base64, sys, math, hashlib, hmac, ipaddress, json, os, re, secrets, selectors, sqlite3, struct, subprocess, tempfile, threading, time
 from collections import deque
@@ -791,7 +791,7 @@ class Handler(BaseHTTPRequestHandler):
         super().setup();self.connection.settimeout(50)
 
 def startup_summary(powershell, root=ROOT):
-    return 'Nebulah Link Free | read-only console bridge | Windows Neighborhood required for console reads.\n' + 'RTE/RTM source and all console-write operations are excluded from this edition.'
+    return 'Nebulah Link Basic | currently read-only console bridge | Windows Neighborhood required for console reads.\n' + 'Uploads, inspected launches, power, and controller input are planned; RTE/RTM and other writes stay in Pro.'
 
 
 def open_startup_browser(url, preference='default', environment=None):

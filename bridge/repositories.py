@@ -4,7 +4,7 @@ import json, re, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from runtime_paths import ROOT
-PRESETS=('Nebulah360/Nebulah-Web-App','Nebulah360/Nebulah-Dash')
+PRESETS=('Nebulah360/Nebulah-Link','Nebulah360/Nebulah-Dash')
 DEFAULT_DB=ROOT/'.local/repositories.sqlite3'
 def now():return datetime.now(timezone.utc).isoformat()
 def repo_name(value):

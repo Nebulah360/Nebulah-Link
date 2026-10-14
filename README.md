@@ -1,6 +1,6 @@
-# Nebulah Link — Free
+# Nebulah Link — Basic
 
-Read-only Xbox 360 companion for your Windows PC or phone. The local Windows bridge connects through Xbox 360 Neighborhood; your phone uses that PC on your private network.
+Local Xbox 360 companion for your Windows PC or phone. The Windows bridge connects through Xbox 360 Neighborhood; your phone uses that PC on your private network.
 
 **Migration candidate:** 44 host tests, JavaScript syntax checks, and Python compilation checks pass. Windows/Xbox hardware acceptance of this extracted edition remains pending.
 
@@ -12,7 +12,7 @@ Read-only Xbox 360 companion for your Windows PC or phone. The local Windows bri
 
 For phone access, open the LAN URL printed by the bridge and enter the Phone PIN displayed on the PC. Keep the bridge window open. HTTP is unencrypted; use a trusted private network and never forward the bridge port.
 
-## Free features
+## Current Basic features
 
 - Console status, current title, temperatures, screen capture, and module inventory.
 - Discovered storage roots, folder browsing, capacity/health reads, and individual file downloads up to 128 MiB.
@@ -20,11 +20,11 @@ For phone access, open the LAN URL printed by the bridge and enter the Phone PIN
 - Local library scanning, favorites, saved profiles, cached metadata, and existing launch history.
 - Local settings and accent color. Read API routes also retain title-update inspection, optional metadata lookup, and Discord activity support.
 
-This edition has no title launches, uploads, console power controls, notifications, controller input, plugin changes, or memory/stat editing. Unknown console actions are rejected at the HTTP, bridge, and adapter boundaries. No local setting or Admin switch can enable writes.
+The current extracted build is read-only. The approved Basic write scope is file uploads, inspected title launches, power commands, and bounded controller input. These still need implementation and hardware verification. Unknown console actions are rejected at the HTTP, bridge, and adapter boundaries; no setting enables unimplemented writes.
 
-## Private features
+## Pro boundary
 
-All RTE/RTM source stays private, including read-only RTE/RTM implementation. Read features remain free through a separately distributed private-source component; that integration is not yet shipped in this extracted edition. Console writes belong to Nebulah Link Pro with a planned one-time paid entitlement. Payment enforcement is not implemented yet.
+Nebulah Link Pro is private and includes the Basic feature set plus full RTE/RTM and other console writes, including profile/stat edits, plugin and DashLaunch changes, and memory writes. These implementations stay out of Basic. Pro is still a prior core snapshot; parity with the latest uncommitted Main work remains pending. Payment enforcement is not implemented yet.
 
 Keep `.local` when updating; it contains your saved settings and library. XEX structure and digest checks do not prove safety, authenticity, or console compatibility. No games, console binaries, or proprietary SDK files are included.
 
@@ -34,4 +34,4 @@ Run `python -m unittest discover -s tests -v`, `node --check dist/app.js`, and `
 
 Read [repository policy](docs/REPOSITORY_POLICY.md) and [agent instructions](AGENTS.md) before changing or releasing this project.
 
-[Website](https://nebulah.app/) · [Discord](https://discord.gg/QCQcXaz6RU) · [Issues](https://github.com/Nebulah360/Nebulah-Web-App/issues)
+[Website](https://nebulah.app/) · [Discord](https://discord.gg/QCQcXaz6RU) · [Issues](https://github.com/Nebulah360/Nebulah-Link/issues)
