@@ -1,4 +1,4 @@
-"""Bounded read-only XBDM transport and drive-list probe."""
+"""Bounded XBDM transport and drive-list probe."""
 import re
 import socket
 
@@ -23,11 +23,13 @@ def exact(stream, count):
     return bytes(data)
 
 
-def session(host):
+def session(host, timeout=3):
     if not isinstance(host, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,253}', host):
         raise ValueError('Console connection unavailable.')
-    stream = socket.create_connection((host, 730), timeout=3)
-    stream.settimeout(3)
+    if type(timeout) is not int or not 1 <= timeout <= 210:
+        raise ValueError('XBDM timeout is invalid.')
+    stream = socket.create_connection((host, 730), timeout=timeout)
+    stream.settimeout(timeout)
     if not line(stream).startswith(b'201-'):
         stream.close()
         raise ValueError('XBDM did not accept the connection.')

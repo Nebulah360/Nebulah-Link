@@ -13,10 +13,37 @@ from runtime_paths import ROOT
 
 class CompanionError(ValueError):
     """Fixed user-facing validation errors; never raw COM output."""
+
+class TransferFailure(CompanionError):
+    def __init__(self, message, diagnostic, recovery_required):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+        self.recovery_required = recovery_required
+
+    def payload(self):
+        return {'error': str(self), 'diagnostic': self.diagnostic, 'recovery_required': self.recovery_required}
+
 DEFAULT_DB = ROOT / '.local/companion.sqlite3'
 CHUNK = 64 * 1024
 MAX_TRANSFER = 128 * 1024 * 1024
 MAX_UPLOAD_NAME = 32
+
+def console_upload_filename(name):
+    """Keep new console filenames short and unambiguous for Neighborhood reads."""
+    if not isinstance(name, str) or not name or len(name) > 255 or name in ('.', '..') or re.search(r'[\\/\x00-\x1f]', name):
+        raise CompanionError('Choose a filename without path separators or control characters.')
+    stem, dot, extension = name.rpartition('.')
+    if not stem or not re.fullmatch(r'[A-Za-z0-9]{1,8}', extension):
+        stem, extension = name, ''
+    stem = re.sub(r'[^A-Za-z0-9_-]+', '_', stem).strip('_-')
+    digest = hashlib.sha256(name.encode('utf-8')).hexdigest()[:6]
+    if not stem:
+        stem = 'file_' + digest
+    suffix = '.' + extension if extension else ''
+    if len(stem) + len(suffix) > MAX_UPLOAD_NAME:
+        stem = (stem[:MAX_UPLOAD_NAME - len(suffix) - 7].rstrip('_-') or 'file') + '_' + digest
+    return stem + suffix
+
 MAX_TITLE_NAMES = 2000
 MAX_TITLE_COVERS = 200
 
@@ -317,6 +344,22 @@ class Workspace:
             self.sync_game_data()
         return saved
 
+    def companion_run_add(self, target, path, sha256, size):
+        if (not isinstance(target, str) or not target or not re.fullmatch(r'[A-Za-z0-9_.-]{1,253}', target) or
+                not isinstance(path, str) or not re.search(r'\\NebulahCompanion-[0-9a-f]{16}\.xex$', path, re.I) or
+                not re.fullmatch(r'[0-9a-f]{64}', sha256) or not 24 <= size <= 64 * 1024 * 1024):
+            raise ValueError('Invalid temporary Companion file identity.')
+        with self.db() as db:
+            db.execute('INSERT INTO companion_runs VALUES(?,?,?,?)', (target.lower(), path, sha256, size))
+
+    def companion_runs(self, target):
+        with self.db() as db:
+            return [dict(row) for row in db.execute('SELECT path,sha256,size FROM companion_runs WHERE target=?', (target.lower(),))]
+
+    def companion_run_remove(self, target, path):
+        with self.db() as db:
+            db.execute('DELETE FROM companion_runs WHERE target=? AND path=?', (target.lower(), path))
+
     def record_launch(self, target, path, state='accepted'):
         with self.db() as db:
             db.execute('DELETE FROM recent WHERE target=? AND path=? COLLATE NOCASE', (target.lower(), path))
@@ -356,6 +399,8 @@ class Companion:
             return self.store.profile_save(data)
         if action == 'profiles/remove':
             return self.store.profile_remove(data.get('id'))
+        if action in ('transfer/cancel', 'transfer/status', 'transfer/cleanup'):
+            return self.transfer_action(action, data)
         if b.target is None:
             raise CompanionError('Connect a console first.')
         if action == 'favorites/list':
@@ -590,6 +635,8 @@ class Companion:
             elif not job['queue']:
                 job['state'] = 'completed'
             return self.scan_status()
+        if action.startswith('transfer/'):
+            return self.transfer_action(action, data)
         raise CompanionError('Unknown companion action.')
 
     def scan_status(self):
@@ -599,5 +646,317 @@ class Companion:
     def scan_candidate(path, formats):
         return file_format(path) == 'xex' if formats == 'xex' else file_format(path) in ('iso', 'god')
 
+    def clean_transfer(self):
+        if self.transfer and self.transfer.get('local_stage'):
+            self.transfer.pop('local_stage').cleanup()
+
     def reset(self):
+        self.clean_transfer()
         self.scan = None
+        self.transfer = None
+        self.launch = None
+
+    def launch_accepted(self, path, metadata, previous):
+        self.launch = {'path': path, 'title_id': metadata.get('title_id'), 'previous': previous or {},
+                       'started': time.monotonic(), 'state': 'accepted'}
+        self.store.record_launch(self.bridge.target, path)
+
+    def observe(self, title):
+        job = self.launch
+        if not job:
+            return None
+        if job['state'] == 'accepted':
+            path = (title.get('executable') or '').lower()
+            expected = job['path'].lower()
+            old = (job['previous'].get('executable') or '').lower()
+            tid = title.get('title_id')
+            oldid = job['previous'].get('title_id')
+            name = path.replace('/', '\\').rsplit('\\', 1)[-1]
+            expected_name = expected.replace('/', '\\').rsplit('\\', 1)[-1]
+            old_name = old.replace('/', '\\').rsplit('\\', 1)[-1]
+            if path == expected and old != expected:
+                job['state'] = 'confirmed-path'
+            elif tid and tid == job['title_id'] and old and name == expected_name and name != old_name:
+                job['state'] = 'confirmed-executable-name'
+            elif tid and tid == job['title_id'] and tid != oldid:
+                job['state'] = 'confirmed-title-id'
+            elif time.monotonic() - job['started'] > 60:
+                job['state'] = 'unconfirmed'
+            if job['state'] != 'accepted':
+                self.store.update_launch(self.bridge.target, job['path'], job['state'])
+        return {'state': job['state'], 'elapsed': int(time.monotonic() - job['started'])}
+
+    def receive_download(self, job):
+        self.bridge.adapter('download-file', path=job['path'], local=job['local_path'], size=job['size'])
+        if Path(job['local_path']).stat().st_size != job['size']:
+            raise CompanionError('Downloaded file size changed.')
+
+    def transfer_action(self, action, data):
+        from server import safe_path
+        b = self.bridge
+        if action == 'transfer/mkdir':
+            if self.transfer and self.transfer['state'] == 'running':
+                raise CompanionError('Finish or cancel the active transfer.')
+            if data.get('confirmed') is not True:
+                raise CompanionError('Confirm the new console folder.')
+            path = safe_path(data.get('path'), b.drives).rstrip('\\')
+            if '\\' not in path:
+                raise CompanionError('Choose a folder below a discovered root.')
+            parent, name = path.rsplit('\\', 1)
+            if not name or len(name) > 42:
+                raise CompanionError('Folder name must be 1–42 characters.')
+            listing = b.dispatch('browse', {'path': parent + '\\'})
+            if listing['listing']['truncated'] or listing['listing']['rejected']:
+                raise CompanionError('Cannot establish folder absence from incomplete listing.')
+            if any(item['name'].casefold() == name.casefold() for item in listing['files']):
+                raise CompanionError('Folder already exists.')
+            b.adapter('create-directory', path=path)
+            listing = b.dispatch('browse', {'path': parent + '\\'})
+            if not any(item['name'].casefold() == name.casefold() and item['directory'] for item in listing['files']):
+                raise CompanionError('New folder could not be verified.')
+            return {'path': path + '\\', 'created': True}
+        if action == 'transfer/start':
+            if self.transfer and self.transfer['state'] == 'running':
+                raise CompanionError('Finish or cancel the active transfer.')
+            direction = data.get('direction')
+            requested_path = data.get('path')
+            if direction == 'upload':
+                if not isinstance(requested_path, str) or '\\' not in requested_path:
+                    raise CompanionError('Choose a console folder and filename.')
+                folder, name = requested_path.rsplit('\\', 1)
+                folder = safe_path(folder + '\\', b.drives)
+                path = safe_path(folder + console_upload_filename(name), b.drives)
+            else:
+                path = safe_path(requested_path, b.drives)
+            if path.endswith('\\'):
+                raise CompanionError('Choose a file path.')
+            if direction not in ('upload', 'download'):
+                raise CompanionError('Invalid direction.')
+            job = {'id': secrets.token_hex(16), 'direction': direction, 'path': path, 'offset': 0,
+                   'state': 'running', 'hash': hashlib.sha256(), 'started': time.monotonic()}
+            if direction == 'download':
+                info = b.adapter('file-info', path=path)
+                size = info.get('size')
+                if info.get('directory') is not False:
+                    raise CompanionError('Not a file.')
+            else:
+                if data.get('upload_protocol') != 2:
+                    raise CompanionError('Upload protocol changed. Hard-refresh the browser (Ctrl+F5) before uploading.')
+                if data.get('confirmed') is not True:
+                    raise CompanionError('Confirm the destination before upload.')
+                size = data.get('size')
+                expected = data.get('sha256')
+                if not isinstance(expected, str) or not re.fullmatch('[0-9a-f]{64}', expected):
+                    raise CompanionError('Upload SHA-256 required.')
+                job['expected'] = expected
+                build_id = data.get('build_id')
+                if build_id is not None and (not isinstance(build_id, str) or not re.fullmatch('[a-z0-9][a-z0-9._-]{0,127}', build_id)):
+                    raise CompanionError('Invalid expected build id.')
+                job['build_id'] = build_id
+                self.require_new_destination(path)
+                job['temporary'] = path.rsplit('\\', 1)[0] + '\\nb-' + job['id'][:24] + '.part'
+            if type(size) is not int or not 0 <= size <= MAX_TRANSFER:
+                raise CompanionError('Transfer limit is 128 MiB per file.')
+            self.clean_transfer()
+            job['size'] = size
+            job['local_stage'] = tempfile.TemporaryDirectory(prefix='nebulah-transfer-')
+            job['local_path'] = str(Path(job['local_stage'].name) / 'transfer.bin')
+            Path(job['local_path']).touch()
+            job['phase'] = 'staging' if direction == 'upload' else 'receiving'
+            self.transfer = job
+            return self.transfer_status()
+        job = self.transfer
+        if not job or data.get('id') != job['id']:
+            raise CompanionError('Transfer expired.')
+        if action == 'transfer/status':
+            return self.transfer_status()
+        if action == 'transfer/cancel':
+            if job['state'] == 'running':
+                job['state'] = 'cancelled'
+            self.clean_transfer()
+            return self.transfer_status()
+        if action == 'transfer/cleanup':
+            if job['direction'] != 'upload' or not job.get('remote_attempted') or job['state'] not in ('cancelled', 'failed'):
+                raise CompanionError('No failed remote upload partial is available.')
+            if data.get('id') != job['id'] or data.get('confirmed') is not True:
+                raise CompanionError('Confirm cleanup for this failed upload.')
+            if data.get('path') not in (None, job.get('temporary')):
+                raise CompanionError('Partial path does not match this transfer.')
+            b.adapter('delete-file', path=job['temporary'])
+            job['partial_cleaned'] = True
+            return self.transfer_status()
+        if job['state'] != 'running':
+            raise CompanionError('Transfer is not active.')
+        if time.monotonic() - job['started'] > 3600:
+            job['state'] = 'expired'
+            self.clean_transfer()
+            raise CompanionError('Transfer expired.')
+        if action == 'transfer/approve':
+            consent = job.pop('consent', None)
+            if (job['direction'] != 'upload' or job['phase'] != 'checked' or not consent
+                    or data.get('confirmed') is not True or not isinstance(data.get('consent'), str)
+                    or not secrets.compare_digest(consent, data['consent']) or time.monotonic() > job['consent_expires']):
+                job['state'] = 'failed'
+                self.clean_transfer()
+                raise CompanionError('Executable upload confirmation expired or invalid. Stage the file again.')
+            job['phase'] = 'approved'
+            return self.transfer_status()
+        if action == 'transfer/finish':
+            if job['offset'] != job['size']:
+                raise CompanionError('Transfer incomplete.')
+            try:
+                if job['direction'] == 'download':
+                    if job['phase'] == 'receiving':
+                        self.receive_download(job)
+                    job['state'] = 'completed'
+                    self.clean_transfer()
+                    return self.transfer_status()
+                if job['phase'] == 'staging':
+                    if job['hash'].hexdigest() != job['expected']:
+                        raise CompanionError('Staged upload digest mismatch; nothing sent to console.')
+                    report = self.upload_report(job)
+                    if report:
+                        job['checkpoint'] = report
+                        job['phase'] = 'checked'
+                        job['consent'] = secrets.token_urlsafe(32)
+                        job['consent_expires'] = time.monotonic() + 120
+                        return self.transfer_status()
+                    self.send_staged_upload(job)
+                elif job['phase'] == 'approved':
+                    if time.monotonic() > job['consent_expires']:
+                        raise CompanionError('Executable upload confirmation expired. Stage the file again.')
+                    self.recheck_upload(job)
+                    self.send_staged_upload(job)
+                elif job['phase'] == 'checked':
+                    raise CompanionError('Confirm the staged executable report before uploading.')
+                elif job['phase'] == 'sent':
+                    job['phase'] = 'verifying'
+                    result = b.adapter('verify-upload', path=job['temporary'], size=job['size'])
+                    if result.get('sha256') != job['expected']:
+                        raise CompanionError('Full-file read-back hash mismatch; partial retained, destination not finalized.')
+                    job['phase'] = 'verified'
+                elif job['phase'] == 'verified':
+                    if job.get('checkpoint'):
+                        self.recheck_upload(job)
+                    self.require_new_destination(job['path'])
+                    job['phase'] = 'finalizing'
+                    b.adapter('rename-transfer', path=job['temporary'], destination=job['path'])
+                    job['phase'] = 'finalized'
+                    job['state'] = 'completed'
+                    self.clean_transfer()
+                return self.transfer_status()
+            except BridgeDiagnostic as error:
+                job['state'] = 'failed'
+                self.clean_transfer()
+                raise self.transfer_failure(job, error) from None
+            except Exception:
+                job['state'] = 'failed'
+                self.clean_transfer()
+                raise
+        if action != 'transfer/chunk' or data.get('offset') != job['offset']:
+            raise CompanionError('Unexpected transfer offset.')
+        try:
+            remaining = job['size'] - job['offset']
+            count = min(CHUNK, remaining)
+            if count <= 0:
+                raise CompanionError('No bytes remaining.')
+            if job['direction'] == 'download':
+                if job['phase'] == 'receiving':
+                    self.receive_download(job)
+                    job['phase'] = 'streaming'
+                with open(job['local_path'], 'rb') as received:
+                    received.seek(job['offset'])
+                    chunk = received.read(count)
+                content = base64.b64encode(chunk).decode()
+            else:
+                content = data.get('content')
+                chunk = base64.b64decode(content, validate=True)
+                if len(chunk) != count:
+                    raise CompanionError('Incorrect chunk size.')
+                if job['phase'] != 'staging':
+                    raise CompanionError('Upload is no longer staging.')
+                with open(job['local_path'], 'ab') as staged:
+                    if staged.tell() != job['offset']:
+                        raise CompanionError('Staged file size changed.')
+                    staged.write(chunk)
+            if len(chunk) != count:
+                raise CompanionError('File changed or short read.')
+            job['hash'].update(chunk)
+            job['offset'] += len(chunk)
+            response = self.transfer_status()
+            if job['direction'] == 'download':
+                response['content'] = content
+            return response
+        except BridgeDiagnostic as error:
+            job['state'] = 'failed'
+            self.clean_transfer()
+            raise self.transfer_failure(job, error) from None
+        except CompanionError:
+            job['state'] = 'failed'
+            self.clean_transfer()
+            raise
+        except Exception:
+            job['state'] = 'failed'
+            self.clean_transfer()
+            raise CompanionError('Transfer response could not be decoded; any remote partial file is retained.') from None
+
+    def transfer_failure(self, job, error):
+        self.bridge.require_recovery(error)
+        diagnostic = {**error.payload()['diagnostic'], 'phase': job['phase'], 'offset': job['offset']}
+        job['failure'] = diagnostic
+        suffix = ' Console operations paused; confirm console recovery before reconnecting.' if self.bridge.recovery_hold is not None else ''
+        return TransferFailure(
+            f'{error.reason} [{error.code}; HRESULT {error.hresult or "unavailable"}; phase {job["phase"]}; byte offset {job["offset"]}].' + suffix,
+            diagnostic, self.bridge.recovery_hold is not None)
+
+    def require_new_destination(self, path):
+        folder, name = path.rsplit('\\', 1)
+        result = self.bridge.dispatch('browse', {'path': folder + '\\'})
+        if result.get('listing', {}).get('truncated') or result.get('listing', {}).get('rejected'):
+            raise CompanionError('Cannot establish destination absence from incomplete listing.')
+        if any(f['name'].lower() == name.lower() for f in result['files']):
+            raise CompanionError('Destination exists. Choose a new filename; overwrite is disabled.')
+
+    def transfer_status(self):
+        job = self.transfer
+        result = {k: job[k] for k in ('id', 'direction', 'path', 'size', 'offset', 'state')}
+        result['chunk_size'] = CHUNK
+        if job['direction'] == 'upload':
+            result['temporary'] = job['temporary']
+            result['phase'] = job['phase']
+            if job.get('checkpoint'):
+                result['checkpoint'] = job['checkpoint']
+            if job['phase'] == 'checked' and job['state'] == 'running' and job.get('consent'):
+                result['consent'] = job['consent']
+                result['consent_expires_in'] = max(0, int(job['consent_expires'] - time.monotonic()))
+        result['remote_partial_possible'] = job.get('remote_attempted', False)
+        result['partial_cleaned'] = job.get('partial_cleaned', False)
+        if job.get('failure'):
+            result['failure'] = job['failure']
+        if job['state'] == 'completed':
+            result['sha256'] = job['hash'].hexdigest()
+        return result
+
+    def recheck_upload(self, job):
+        report = self.upload_report(job)
+        previous = job['checkpoint']
+        if (not report or report['registry']['catalog_revision'] != previous['registry']['catalog_revision']
+                or report['game_catalog_revision'] != previous['game_catalog_revision']):
+            raise CompanionError('Executable review catalog changed. Stage and confirm the file again.')
+
+    def upload_report(self, job):
+        from upload_checkpoint import check_staged_file
+        try:
+            return check_staged_file(job['local_path'], job['path'], job['size'], job['expected'], job.get('build_id'))
+        except ValueError as error:
+            raise CompanionError('Upload checkpoint rejected: ' + str(error)) from None
+        except OSError:
+            raise CompanionError('Staged file or review catalog unavailable. Upload blocked.') from None
+
+    def send_staged_upload(self, job):
+        self.require_new_destination(job['path'])
+        job['phase'] = 'sending'
+        job['remote_attempted'] = True
+        self.bridge.adapter('upload-empty' if job['size'] == 0 else 'upload-file',
+                            path=job['temporary'], local=job['local_path'], size=job['size'])
+        job['phase'] = 'sent'

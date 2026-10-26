@@ -10,7 +10,7 @@ def support_catalog():
     except (OSError,ValueError,KeyError):return {}
 
 ERRORS = {
-    'PLATFORM_UNSUPPORTED': ('Xbox connection needs Windows', 'Xbox 360 Neighborhood is available only through Windows COM.', 'Run Nebulah Link on Windows with licensed Neighborhood. macOS/Linux can open the local browser and keep saved data, but cannot connect to the Xbox.'),
+    'PLATFORM_UNSUPPORTED': ('Operation needs Windows Neighborhood', 'The direct XBDM adapter does not support this operation.', 'Use Windows with licensed Neighborhood for this operation.'),
     'RECOVERY_REQUIRED': ('Console recovery required', 'Console operations are paused after an uncertain adapter or transfer failure.', 'Check the console locally and restart it if frozen. Use Connect console and explicitly confirm recovery. Do not repeat network-interruption testing.'),
     'TRANSFER_CREATE_FAILED': ('Upload creation failed', 'Neighborhood SendFile could not send the staged upload to its partial filename.', 'Keep any partial and report this code and HRESULT. Confirm console recovery before reconnecting; sending may have started.'),
     'TRANSFER_APPEND_FAILED': ('Upload append failed', 'Neighborhood could not append a later upload chunk, including any applicable compatibility fallback.', 'Keep the partial file and report this code, HRESULT and byte offset.'),
@@ -40,7 +40,7 @@ ERRORS = {
     'MODULE_LOAD_FAILED': ('Module load failed', 'The console did not confirm the DLL/plugin module load.', 'Check the exact file and current module list. Reinspect the file before retrying.'),
     'MODULE_ALREADY_LOADED': ('Module already loaded', 'The selected module name already appears in the console module list. No load command was sent.', 'Check the running module list and receiver. Unload safely or cold reboot before another load attempt.'),
     'MODULE_LOAD_UNCONFIRMED': ('Module load outcome uncertain', 'The module appeared in the console list after an unconfirmed load reply.', 'Do not load it again. Check the receiver and console, then use the module safe-unload procedure if needed.'),
-    'MODULE_UNLOAD_FAILED': ('Module unload failed', 'The console did not confirm the module was removed.', 'Check the module list and console responsiveness. For 360Stream, prepare unload and wait for SAFE_TO_UNLOAD.'),
+    'MODULE_UNLOAD_FAILED': ('Module unload failed', 'The console did not confirm the module was removed.', 'Check the module list and console responsiveness. Do not send a second unload while the module is still listed.'),
     'CONSOLE_NOTIFY_FAILED': ('Xbox notification unconfirmed', 'JRPC2 did not confirm the notification command.', 'Check that JRPC2 is loaded and responding, then retry one test notification.'),
     'CONSOLE_POWER_FAILED': ('Console power command unconfirmed', 'Neighborhood did not confirm the requested reboot or shutdown command.', 'Check the console locally. Power retries are paused until you reconnect and explicitly confirm recovery.'),
     'LAUNCH_INI_SAVE_FAILED': ('Plugin slot save unconfirmed', 'Neighborhood could not confirm the active launch.ini update.', 'Open the active launch.ini in Neighborhood. Check for a Nebulah .bak or .new recovery copy before retrying or rebooting.'),

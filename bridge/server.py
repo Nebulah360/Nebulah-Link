@@ -1,6 +1,6 @@
-"""Current read-only Nebulah Link Basic bridge; Pro owns RTE/RTM."""
+"""Nebulah Link Basic bridge. Locked neighborhood writes stay on the allowlist."""
 import webbrowser
-import argparse, base64, sys, math, hashlib, hmac, ipaddress, json, os, re, secrets, selectors, sqlite3, struct, subprocess, tempfile, threading, time
+import argparse, base64, sys, math, hashlib, hmac, ipaddress, json, os, re, secrets, selectors, sqlite3, ssl, struct, subprocess, tempfile, threading, time
 from collections import deque
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -12,6 +12,7 @@ from browser_sessions import BrowserSessions
 from companion import Companion, CompanionError
 from game_catalog import verify_game, capabilities, candidate_from_inspection
 from hash_registry import load_catalog, public_build, verify_digest, RegistryError
+from component_catalog import classify_component
 from runtime_paths import ROOT
 from access_policy import API_ACTIONS, BRIDGE_ACTIONS, ADAPTER_ACTIONS, assert_allowed
 SESSION_HANDOFF_PATH = ROOT / '.local' / 'browser-session-handoff.json'
@@ -20,13 +21,22 @@ MAX_XEX = 64 * 1024 * 1024
 ADAPTER_VERSION = 10
 GAME_INSPECTION_TTL = 600
 MAX_GAME_INSPECTIONS = 32
+XNOTIFY_TYPES = frozenset((
+    *range(0, 37), 38, 39, 40, 41, 43, 44, 45, 46, 47,
+    49, 50, 51, 52, 53, 56, 57, 58, 59, 60, 68,
+))
+DEFAULT_XNOTIFY_TYPE = 14
+WARM_RECOVERY_CODES = frozenset(('CONSOLE_OPEN_FAILED', 'ADAPTER_TIMEOUT', 'ADAPTER_OPERATION_FAILED'))
+# Direct unload and force-release stay paused until a console trial passes.
+# launch.ini plugin save is not in this set: Basic keeps its confirm and read-back.
+BETA_GATED_ACTIONS = frozenset({'plugins/unload', 'plugins/force-release'})
 BULK_PROCESS_TIMEOUT = 210
-TRANSFER_ACTIONS = {'download-file', 'receive', 'file-info'}
+TRANSFER_ACTIONS = {'download-file', 'receive', 'file-info', 'upload-file', 'upload-empty', 'verify-upload', 'rename-transfer', 'delete-file', 'delete-directory', 'create-directory'}
 _TERMINAL_EVENTS = {'READY','ALIVE','BROWSER_OPENED','BROWSER_OPEN_FAILED','ADAPTER_FAILED','REQUEST_FAILED','REQUEST_SUCCEEDED','BROWSER_DISCONNECTED','STOPPED','FATAL'}
-_TERMINAL_GROUPS = {'bridge','idle','adapter','connect','status','storage','console','plugins','games','library','session','repos','registry','browse','scan','metadata','discord','profiles','favorites','discover','usb','recovery','browser','launcher','settings','other'}
+_TERMINAL_GROUPS = {'bridge','idle','adapter','connect','status','storage','console','plugins','games','library','session','repos','registry','browse','scan','metadata','discord','profiles','favorites','discover','usb','recovery','browser','launcher','settings','cherry','profile-package','ftp','transfer','launch','other'}
 _TERMINAL_CODES = set(ERRORS) | {'VALIDATION','TIMEOUT','INTERNAL_ERROR','REQUEST_INTERRUPTED','REQUEST_INCOMPLETE','RESPONSE_INTERRUPTED','BIND_FAILED','BRIDGE_ALREADY_RUNNING','SERVER_EXIT','NORMAL','INTERRUPTED','UNEXPECTED','ACCESS_DENIED','SESSION_CONFLICT','RATE_LIMIT'}
 _TERMINAL_ACTIONS = set(API_ACTIONS)
-_TERMINAL_FREQUENT_ACTIONS = {'status','recovery/status','session/resume','discord/status','scan/step'}
+_TERMINAL_FREQUENT_ACTIONS = {'status','recovery/status','session/resume','discord/status','scan/step','ftp/status','transfer/chunk','transfer/status'}
 _terminal_last = {}
 _terminal_recent = deque(maxlen=8)
 _terminal_lock = threading.Lock()
@@ -269,25 +279,35 @@ class Bridge:
         self.platform_supported=True if platform_supported is None else platform_supported
         self.target=None; self.drives=[]; self.accessible_roots=None
         self.recovery_hold=None; self.recovery_warm_available=False
-        self.companion=None; self.discord_presence=None; self.igdb=None; self.stream360=None
-        self.private_tickets={}; self.game_inspections={}; self.last_title={}; self.active_adapter=None
+        self.companion=None; self.discord_presence=None; self.igdb=None; self.ftp_service=None
+        self.tickets={}; self.private_tickets={}; self.game_inspections={}; self.last_title={}; self.active_adapter=None
+        self.plugin_managed={}; self.plugin_unload_uncertain=set(); self.plugin_force_attempted=set(); self.plugin_unload_target=None
+        self.launch_ini_edit_hold=None
+        self.cherry_local_enabled=False; self.profile_selections={}; self.profile_identity_candidates=None
+        self.connection_generation=0
 
     def require_recovery(self, error, allow_warm=False):
-        if self.recovery_hold is None:self.recovery_hold=error.payload()['diagnostic']
-        self.private_tickets.clear(); self.game_inspections.clear()
+        if self.recovery_hold is None:
+            self.recovery_hold=error.payload()['diagnostic']
+            self.recovery_warm_available=bool(allow_warm)
+        self.tickets.clear(); self.private_tickets.clear(); self.game_inspections.clear(); self.launch_ini_edit_hold=None
 
     def recovery_error(self):
         return BridgeDiagnostic('RECOVERY_REQUIRED', 'operation')
 
     def adapter(self, action, **kwargs):
         assert_allowed(action, ADAPTER_ACTIONS)
+        allow_recovery=kwargs.pop('_allow_recovery', False)
+        warm_recovery=bool(self.recovery_hold is not None and allow_recovery and action=='power' and kwargs.get('mode')=='warm' and self.recovery_warm_available)
         if action=='download-file' and protected_private_file(kwargs.get('path','')):
             raise ValueError('Private console key files require a separate confirmed read.')
-        if self.recovery_hold is not None:raise self.recovery_error()
+        if self.recovery_hold is not None and not warm_recovery:raise self.recovery_error()
+        if warm_recovery:self.recovery_warm_available=False
         self.active_adapter=operation_group(action)
         try:return self._adapter(action, **kwargs)
         except BridgeDiagnostic as error:
-            self.require_recovery(error)
+            if error.code != 'PLATFORM_UNSUPPORTED':
+                self.require_recovery(error, allow_warm=action=='status' and error.code in WARM_RECOVERY_CODES)
             raise
         finally:self.active_adapter=None
 
@@ -296,6 +316,9 @@ class Bridge:
         if set(kwargs) & {'action','target'}:raise ValueError('Reserved adapter fields.')
         if not self.platform_supported:
             raise BridgeDiagnostic('PLATFORM_UNSUPPORTED')
+        if self.powershell is None:
+            from xbdm_adapter import dispatch
+            return dispatch(self.target or '', action, kwargs)
         try:
             p=subprocess.run([self.powershell,'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(ROOT/'bridge/neighborhood.ps1')],
                 input=json.dumps({'action':action,'target':self.target or '',**kwargs}).encode('ascii'),capture_output=True,timeout=BULK_PROCESS_TIMEOUT if action in ('download-file','receive') else 40)
@@ -347,7 +370,8 @@ class Bridge:
         name=cached_title.get('name')
         if isinstance(name,str) and 2<=len(name.strip())<=110 and name.isprintable():result['current_title']['name']=name.strip()
         if self.discord_presence:self.discord_presence.update(cached_title)
-        return {**result,'edition':'free','read_only':True}
+        if self.companion:result['launch_tracking']=self.companion.observe(self.last_title)
+        return {**result,'edition':'free'}
 
 
     def inspect(self,path,allow_module=False):
@@ -374,7 +398,14 @@ class Bridge:
     def dispatch(self, action, data):
         assert_allowed(action, BRIDGE_ACTIONS)
         if not isinstance(data, dict):raise ValueError('Object required.')
-        if action=='recovery/status':return {'recovery_required':self.recovery_hold is not None,'failure':self.recovery_hold,'warm_reboot_available':False}
+        if action.startswith('badbuilder/web/'):
+            from badbuilder_web import start, status, scan, availability
+            method={'badbuilder/web/start':start,'badbuilder/web/status':status,
+                    'badbuilder/web/scan':scan,'badbuilder/web/availability':availability}[action]
+            return method(data)
+        if action=='recovery/status':return {'recovery_required':self.recovery_hold is not None,'failure':self.recovery_hold,'warm_reboot_available':self.recovery_warm_available}
+        if action in BETA_GATED_ACTIONS and not (action=='plugins/unload' and data.get('route')=='component'):
+            raise ValueError('This action is paused until its console trial passes.')
         if action=='connect':
             if self.recovery_hold is not None and data.get('recovery_confirmed') is not True:raise self.recovery_error()
             target=data.get('target','')
@@ -382,24 +413,58 @@ class Bridge:
             if not target:
                 from app_settings import load
                 target=load()['default_console_ip']
+            if self.ftp_service is not None and target != self.target:
+                self.ftp_service.stop()
             previous=self.recovery_hold
             self.target=target;self.drives=[];self.accessible_roots=None
-            self.private_tickets.clear();self.game_inspections.clear();self.last_title={}
-            self.recovery_hold=None
-            if self.companion:self.companion.scan=None
+            self.tickets.clear();self.private_tickets.clear();self.game_inspections.clear();self.last_title={}
+            self.plugin_managed.clear();self.launch_ini_edit_hold=None
+            self.profile_selections={};self.profile_identity_candidates=None
+            self.connection_generation+=1
+            self.recovery_hold=None;self.recovery_warm_available=False
+            if self.target != self.plugin_unload_target:
+                self.plugin_unload_uncertain.clear();self.plugin_force_attempted.clear();self.plugin_unload_target=None
+            if self.companion:self.companion.reset()
             try:return self.status()
             except Exception:
                 self.target=None;self.drives=[]
                 if previous is not None:self.recovery_hold=previous
                 raise
-        if self.recovery_hold is not None:raise self.recovery_error()
-        if self.target is None and not action.startswith(('profiles/','repos/','discover/','usb/','discord/','registry/')):
+        warm_recovery=(action=='console/power' and data.get('mode')=='warm' and data.get('confirmed') is True and self.recovery_warm_available)
+        if self.recovery_hold is not None and action not in ('transfer/cancel','transfer/status','transfer/cleanup','discord/status','discord/stop','ftp/status','ftp/stop') and not warm_recovery:
+            raise self.recovery_error()
+        if action=='transfer/cleanup' and self.recovery_hold is not None:
+            if data.get('recovery_confirmed') is not True:raise self.recovery_error()
+            self.recovery_hold=None;self.recovery_warm_available=False
+        if action.startswith('ftp/'):
+            from ftp_service import dispatch as ftp_dispatch, FtpError
+            try:return ftp_dispatch(self, action, data)
+            except FtpError as error:raise ValueError(str(error)) from None
+        if action.startswith('transfer/'):
+            return self.workspace().dispatch(action, data)
+        if action.startswith('cherry/'):
+            from cherry_local import dispatch as cherry_dispatch
+            return cherry_dispatch(self, action, data)
+        if self.target is None and not action.startswith(('profiles/','repos/','discover/','usb/','discord/','registry/','cherry/')):
             raise ValueError('Connect a console first.')
         if action=='status':
             if self.target is None:raise ValueError('Connect a console first.')
             if data:raise ValueError('Status takes no options.')
             return self.status()
-        if action.startswith(('profiles/','favorites/','library/','metadata/','scan/')) or action in ('storage/capacity','storage/health','games/addons','games/title-update'):
+        if action=='profile-package/list':
+            if data:raise ValueError('Profile discovery takes no options.')
+            from profile_packages import list_profile_packages
+            return list_profile_packages(self)
+        if action=='profile-package/active':
+            if data:raise ValueError('Signed-in profile check takes no options.')
+            from profile_packages import current_profile
+            return current_profile(self)
+        if action=='profile-package/inspect':
+            if set(data) not in ({'path'}, {'selection'}):raise ValueError('Choose one profile package.')
+            from profile_packages import inspect_profile_package
+            path=self.profile_selections.get(data['selection']) if 'selection' in data and isinstance(data['selection'],str) else data.get('path')
+            return inspect_profile_package(self,safe_path(path,self.drives))
+        if action.startswith(('profiles/','favorites/','library/','metadata/','scan/')) or action in ('storage/capacity','storage/health','games/addons','games/title-update','games/install-plan'):
             return self.workspace().dispatch(action,data)
         if action=='files/download':
             path=safe_path(data.get('path'),self.drives)
@@ -419,6 +484,9 @@ class Bridge:
             if self.target is None:raise ValueError('Connect a console first.')
             from screenshot import capture
             return capture(self.target)
+        if action in ('plugins/load','plugins/unload','plugins/force-release','plugins/install','plugins/managed-state'):
+            from plugin_adapter import NeighborhoodPluginAdapter
+            return NeighborhoodPluginAdapter(self).dispatch(action, data)
         if action=='plugins/list':
             if data:raise ValueError('Inventory takes no options.')
             raw=self.adapter('plugins')
@@ -433,9 +501,23 @@ class Bridge:
             if action=='repos/remove':return store.remove(data.get('repository'))
             if action=='repos/check':return store.check(data.get('repository'))
         if action=='validate':
-            path=safe_path(data.get('path'),self.drives)
-            value=self.inspect(path,allow_module=True)
-            return {**value,'verification':verify_digest(value['hash'],value['size'],data.get('build_id')),'game_verification':verify_game(value,path.rsplit('\\',1)[-1]),'read_only':True}
+            path=safe_path(data.get('path'),self.drives);v=self.inspect(path)
+            try:verification=verify_digest(v['hash'],v['size'],data.get('build_id'))
+            except RegistryError:verification={'status':'registry-error','eligible_for_install':False,'discrepancies':['Catalog unavailable or malformed.']}
+            verification['measurement']='console-file-bytes'
+            try:game_verification=verify_game(v,path.rsplit('\\',1)[-1])
+            except (ValueError,OSError):game_verification={'status':'catalog-error','label':'Game catalog unavailable'}
+            blocked=game_verification['status'] in ('mismatch','revoked','catalog-error') or verification['status'] in ('revoked','mismatch','unknown-build','registry-error')
+            component=classify_component(path,v)
+            module_hint=bool(component and component['category'] in ('plugins','stealth'))
+            blocked=blocked or module_hint
+            self.tickets={k:t for k,t in self.tickets.items() if t['expires']>time.monotonic()}
+            ticket=secrets.token_urlsafe(24)
+            if not v['plugin'] and not blocked:
+                self.tickets[ticket]={'path':path,'hash':v['hash'],'expires':time.monotonic()+120,'build_id':data.get('build_id')}
+            return {**v,'verification':verification,'game_verification':game_verification,'component':component,
+                    'launch_block_reason':'Known plugin/stealth name hint; use explicit plugin inspection.' if module_hint else None,
+                    'ticket':None if blocked or v['plugin'] else ticket}
 
         if action.startswith('discord/'):
             from discord_presence import DiscordPresence
@@ -593,7 +675,98 @@ class Bridge:
             return {'listings':[{'error':True} if isinstance(item,dict) and item.get('error') is True
                     else normalize_directory_entries(item.get('files') if isinstance(item,dict) else None,path)
                     for path,item in zip(paths,listings)]}
-        raise ValueError('Unknown read-only operation.')
+        if action=='controller/pulse':
+            buttons={'up':0x0001,'down':0x0002,'left':0x0004,'right':0x0008,
+                     'start':0x0010,'back':0x0020,'lb':0x0100,'rb':0x0200,
+                     'a':0x1000,'b':0x2000,'x':0x4000,'y':0x8000}
+            if set(data)!={'button'} or not isinstance(data['button'],str) or data['button'] not in buttons:
+                raise ValueError('Choose one controller button.')
+            try:
+                session=self.adapter('component-session')
+                ready=session.get('state')=='ready' and self.adapter('component-input-probe').get('available') is True
+            except (BridgeDiagnostic,ValueError,OSError):
+                ready=False
+            if not ready:
+                raise ValueError('Nebulah Companion controller input is unavailable.')
+            try:return self.adapter('component-input-pulse',buttons=buttons[data['button']])
+            except BridgeDiagnostic as error:
+                if error.module_status == '0x0000B105':raise ValueError('Virtual controller binding was not confirmed on this console.') from None
+                if error.module_status == '0x0000B104':raise ValueError('The running title did not read the input press.') from None
+                raise
+        if action=='console/launch-ini':
+            if data:raise ValueError('launch.ini status takes no options.')
+            from launch_ini import discover
+            return discover(self)
+        if action=='console/launch-ini-switch':
+            from launch_ini import switch
+            return switch(self,data)
+        if action=='console/launch-ini/plugins':
+            if data:raise ValueError('Plugin slot status takes no options.')
+            from launch_ini import plugins
+            return plugins(self)
+        if action=='console/launch-ini/plugins/preview':
+            from launch_ini import preview_plugins
+            return preview_plugins(self,data)
+        if action=='console/launch-ini/plugins/save':
+            from launch_ini import save_plugins
+            return save_plugins(self,data)
+        if action=='console/notify':
+            from companion_ux import resolve_notify
+            catalog=data.get('catalog')
+            if catalog is not None:
+                if set(data)-{'catalog','icon','confirmed','suffix'} or data.get('confirmed') is not True:
+                    raise ValueError('Confirm a catalog Xbox notification id.')
+                resolved=resolve_notify(catalog,icon=data.get('icon'),suffix=data.get('suffix'))
+                message=resolved['message']; icon=resolved['icon']
+                if icon not in XNOTIFY_TYPES:
+                    raise ValueError('Confirm a printable ASCII Xbox notification and choose a supported toast icon.')
+            else:
+                message=data.get('message'); icon=data.get('icon', DEFAULT_XNOTIFY_TYPE)
+                if set(data)-{'message','icon','confirmed'} or data.get('confirmed') is not True or not isinstance(message,str) or not re.fullmatch(r'[ -~]{1,80}',message) or type(icon) is not int or icon not in XNOTIFY_TYPES:
+                    raise ValueError('Confirm a printable ASCII Xbox notification and choose a supported toast icon.')
+            result=self.adapter('notify',message=message,icon=icon)
+            if result.get('accepted') is not True:raise BridgeDiagnostic('CONSOLE_NOTIFY_FAILED','module')
+            reply={'accepted':True}
+            if catalog is not None:
+                reply['catalog']=catalog; reply['message']=message
+            return reply
+        if action=='console/power':
+            if set(data)!={'mode','confirmed'} or data.get('confirmed') is not True or data.get('mode') not in ('warm','cold','shutdown'):
+                raise ValueError('Choose and confirm a supported console power action.')
+            if self.companion and self.companion.transfer and self.companion.transfer.get('state')=='running':
+                raise ValueError('Finish or cancel the active transfer before changing console power.')
+            mode=data['mode']
+            power_kwargs={'mode':mode}
+            if warm_recovery:power_kwargs['_allow_recovery']=True
+            result=self.adapter('power',**power_kwargs)
+            if result.get('accepted') is not True or result.get('mode')!=mode:
+                error=BridgeDiagnostic('CONSOLE_POWER_FAILED','power')
+                self.require_recovery(error)
+                raise error
+            if self.ftp_service is not None:self.ftp_service.stop()
+            self.target=None;self.drives=[];self.accessible_roots=None
+            self.tickets.clear();self.private_tickets.clear();self.game_inspections.clear();self.plugin_managed.clear()
+            self.launch_ini_edit_hold=None;self.last_title={}
+            if self.discord_presence:self.discord_presence.update(None)
+            if self.companion:self.companion.reset()
+            return {'accepted':True,'mode':mode,'connection':'reconnect-required'}
+        if action=='launch':
+            ticket=data.get('ticket')
+            if not isinstance(ticket,str):raise ValueError('A validation ticket is required.')
+            t=self.tickets.pop(ticket,None)
+            if not t or t['expires']<time.monotonic():raise ValueError('Inspection expired. Inspect the XEX again.')
+            v=self.inspect(t['path'])
+            if v['plugin'] or not hmac.compare_digest(v['hash'],t['hash']):raise ValueError('File changed. Inspect it again before launching.')
+            component=classify_component(t['path'],v)
+            if component and component['category'] in ('plugins','stealth'):raise ValueError('Plugin/stealth classification rejected title launch.')
+            verification=verify_digest(v['hash'],v['size'],t.get('build_id'))
+            if verification['status'] in ('revoked','mismatch','unknown-build'):raise ValueError('Build verification rejected launch.')
+            game_verification=verify_game(v,t['path'].rsplit('\\',1)[-1])
+            if game_verification['status'] in ('mismatch','revoked'):raise ValueError('Game baseline rejected launch.')
+            self.adapter('launch',path=t['path'])
+            self.workspace().launch_accepted(t['path'],v.get('metadata',{}),self.last_title)
+            return {'accepted':True,'tracking':'accepted'}
+        raise ValueError('Unknown operation.')
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
@@ -608,8 +781,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(raw)))
             self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff')
-            self.send_header('Content-Security-Policy',"default-src 'self'; img-src 'self' data: https://images.igdb.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-            if getattr(self,'session_cookie',None):self.send_header('Set-Cookie',self.session_cookie)
+            self.send_header('Content-Security-Policy',"default-src 'self'; img-src 'self' data: https://images.igdb.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://link.nebulah.app/link-pro/redeem")
+            if getattr(self,'session_cookie',None):self.send_header('Set-Cookie',self.session_cookie+('; Secure' if getattr(self.server,'scheme','http')=='https' else ''))
             self.end_headers();self.wfile.write(raw)
         except (ConnectionError,TimeoutError):
             # The request may already have changed the console. Never replay it,
@@ -629,7 +802,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
     def do_GET(self):
         if not self.host_ok():return self.reply(403,{'error':'Host not allowed.'})
-        files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript'),'/theme.js':('theme.js','text/javascript'),'/style.css':('style.css','text/css')}
+        files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript'),'/badbuilder.js':('badbuilder.js','text/javascript'),'/theme.js':('theme.js','text/javascript'),'/discover.js':('discover.js','text/javascript'),'/discord.js':('discord.js','text/javascript'),'/iso.js':('iso.js','text/javascript'),'/launcher_basic.js':('launcher_basic.js','text/javascript'),'/ftp.js':('ftp.js','text/javascript'),'/transfer.js':('transfer.js','text/javascript'),'/folder_transfer.js':('folder_transfer.js','text/javascript'),'/console_actions.js':('console_actions.js','text/javascript'),'/nebulah-n.png':('nebulah-n.png','image/png'),'/style.css':('style.css','text/css')}
         if self.path not in files:return self.reply(404,{'error':'Not found.'})
         name,kind=files[self.path]
         try:
@@ -642,7 +815,7 @@ class Handler(BaseHTTPRequestHandler):
         self.session_cookie=None
         self._operation='browser'
         self._action=None
-        if not self.host_ok() or self.headers.get('Origin')!='http://'+self.headers.get('Host',''):
+        if not self.host_ok() or self.headers.get('Origin')!=getattr(self.server,'scheme','http')+'://'+self.headers.get('Host',''):
             terminal_status('REQUEST_FAILED',group='browser',code='ACCESS_DENIED',http=403)
             return self.reply(403,{'error':'Same-origin browser request required.'})
         auth=self.headers.get('Authorization','')
@@ -683,10 +856,10 @@ class Handler(BaseHTTPRequestHandler):
             if not self.path.startswith('/api/'):raise ValueError('Unknown route.')
             action=self.path[5:]
             if action not in API_ACTIONS:
-                return self.reply(403, {'error':'This free bridge accepts read-only console operations.'})
+                return self.reply(403, {'error':'This free bridge rejected that operation.'})
             self._action=action
             self._operation=operation_group(action)
-            if action.startswith(('discord/','launcher/','settings/')) and not self.local_client():
+            if action.startswith(('discord/','launcher/','settings/','badbuilder/','cherry/','profile-package/')) and not self.local_client():
                 terminal_status('REQUEST_FAILED',group=operation_group(action),action=action,code='ACCESS_DENIED',http=403)
                 return self.reply(403,{'error':'Control PC settings on the bridge PC.'})
             if not self.local_client() and action not in ('status','recovery/status','session/resume','session/logout','session/phone-pair'):
@@ -725,7 +898,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.session_cookie=BrowserSessions.cookie(session)
                 terminal_request_success(action,{'awaiting_console':True})
                 return self.reply(200,{'awaiting_console':True})
-            if session in sessions.waiting and action not in ('connect','recovery/status','session/resume','session/logout','launcher/settings','launcher/save','settings/read','settings/save'):
+            if session in sessions.waiting and action not in ('connect','recovery/status','session/resume','session/logout','launcher/settings','launcher/save','settings/read','settings/save','usb/inventory','badbuilder/web/start','badbuilder/web/status','badbuilder/web/scan','badbuilder/web/availability'):
                 terminal_status('REQUEST_FAILED',group=self._operation,action=action,code='SESSION_CONFLICT',http=409)
                 return self.reply(409,{'error':'Pairing saved. Connect a console first.'})
             if action.startswith('session/'):
@@ -751,7 +924,7 @@ class Handler(BaseHTTPRequestHandler):
                         terminal_status('REQUEST_FAILED',group='session',action=action,code='SESSION_CONFLICT',http=409)
                         return self.reply(409,{'error':'Connect a console before creating a phone PIN.'})
                     pin=sessions.issue_phone_pin(target,session)
-                    result={'pin':pin,'url':getattr(self.server,'phone_url','http://'+self.headers['Host']+'/')}
+                    result={'pin':pin,'url':getattr(self.server,'phone_url',getattr(self.server,'scheme','http')+'://'+self.headers['Host']+'/')}
                 else:raise ValueError('Unknown session action.')
             elif action.startswith('launcher/'):
                 from launcher_settings import load, save
@@ -805,7 +978,8 @@ class Handler(BaseHTTPRequestHandler):
         super().setup();self.connection.settimeout(50)
 
 def startup_summary(powershell, root=ROOT):
-    return 'Nebulah Link Basic | currently read-only console bridge | Windows Neighborhood required for console reads.\n' + 'Uploads, inspected launches, power, and controller input are planned; RTE/RTM and other writes stay in Pro.'
+    adapter = 'direct XBDM' if powershell is None else 'Windows Neighborhood'
+    return f'Nebulah Link Basic | neighborhood-class console bridge | {adapter}.\nLocked writes: upload, inspected launch, power, controller pulse, FTP, notify, plugins, launch.ini. Editor and RTE writes stay off.'
 
 
 def open_startup_browser(url, preference='default', environment=None):
@@ -837,9 +1011,12 @@ def bridge_instance(name='Local\\NebulahLinkBridge'):
 def main():
     default_powershell=os.path.join(os.environ.get('WINDIR','C:\\Windows'),'SysWOW64','WindowsPowerShell','v1.0','powershell.exe') if os.name=='nt' else None
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--host',default='127.0.0.1',help='Bind a specific private PC IPv4 address for phone access.');p.add_argument('--port',type=int,default=8765);p.add_argument('--powershell',default=default_powershell)
+    p.add_argument('--tls-cert',help='PEM certificate for optional HTTPS. Use with --tls-key.')
+    p.add_argument('--tls-key',help='PEM private key for optional HTTPS. Use with --tls-cert.')
     p.add_argument('--open-browser',action='store_true',help='Open the local page after successfully binding; pair automatically using a single-use startup link.')
     p.add_argument('--browser',choices=('default','chrome'),default='default',help='Browser for the startup pairing page.')
     a=p.parse_args();ip=ipaddress.ip_address(a.host)
+    if bool(a.tls_cert)!=bool(a.tls_key):p.error('--tls-cert and --tls-key must be supplied together.')
     if ip.version!=4 or not (ip.is_loopback or ip in ipaddress.ip_network('10.0.0.0/8') or ip in ipaddress.ip_network('172.16.0.0/12') or ip in ipaddress.ip_network('192.168.0.0/16')):p.error('Choose loopback or a specific private LAN IPv4 address.')
     with bridge_instance() as available:
         if not available:
@@ -849,30 +1026,41 @@ def main():
 
 def run_bridge(a,ip,p):
     server=None;local_server=None
+    scheme='https' if a.tls_cert else 'http'
+    context=None
+    if a.tls_cert:
+        context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        try:context.load_cert_chain(a.tls_cert,a.tls_key)
+        except (OSError,ssl.SSLError) as error:p.error(f'HTTPS certificate could not be loaded: {error.__class__.__name__}')
     try:
         server=HTTPServer((a.host,a.port),Handler)
         if not ip.is_loopback:local_server=HTTPServer(('127.0.0.1',a.port),Handler)
+        if context:
+            server.socket=context.wrap_socket(server.socket,server_side=True)
+            if local_server:local_server.socket=context.wrap_socket(local_server.socket,server_side=True)
     except OSError:
         if server:server.server_close()
         terminal_status('FATAL',code='BIND_FAILED')
         p.exit(18,'Could not start the bridge on the selected address/port. Close the old bridge, or choose another --port.\n')
     server.allowed_hosts={f'{a.host}:{a.port}'}
+    server.scheme=scheme
     if ip.is_loopback:server.allowed_hosts.add(f'localhost:{a.port}')
     server.phone_host=not ip.is_loopback
     server.browser_sessions=(BrowserSessions.load_handoff(SESSION_HANDOFF_PATH)
                              if server.phone_host else BrowserSessions())
-    server.token=secrets.token_urlsafe(32);server.bridge=Bridge(a.powershell, platform_supported=os.name=='nt')
+    server.token=secrets.token_urlsafe(32);server.bridge=Bridge(a.powershell)
     if local_server:
         local_server.allowed_hosts={f'127.0.0.1:{a.port}',f'localhost:{a.port}'}
+        local_server.scheme=scheme
         local_server.phone_host=True
-        local_server.phone_url=f'http://{a.host}:{a.port}/'
+        local_server.phone_url=f'{scheme}://{a.host}:{a.port}/'
         local_server.browser_sessions=server.browser_sessions
         local_server.token=server.token
         local_server.bridge=server.bridge
     print(startup_summary(a.powershell), flush=True)
-    print(f'\nNebulah Link: http://{a.host}:{a.port}\nKeep this window open. Ctrl+C stops the bridge.\n')
-    if local_server:print(f'PC browser: http://127.0.0.1:{a.port}/\n',flush=True)
-    if not ip.is_loopback:print('LAN mode: trusted private Wi-Fi only. HTTP is not encrypted. Do not forward this port.\n')
+    print(f'\nNebulah Link: {scheme}://{a.host}:{a.port}\nKeep this window open. Ctrl+C stops the bridge.\n')
+    if local_server:print(f'PC browser: {scheme}://127.0.0.1:{a.port}/\n',flush=True)
+    if not ip.is_loopback:print('LAN mode: trusted private Wi-Fi only. '+('HTTPS enabled.' if context else 'HTTP is not encrypted.')+' Do not forward this port.\n')
     terminal_status('READY',pid=os.getpid())
     server.bridge_started=time.monotonic()
     record_bridge_uptime(server,'READY')
@@ -881,7 +1069,7 @@ def run_bridge(a,ip,p):
         browser_server.launch_ticket={'key':secrets.token_urlsafe(32),'expires':time.monotonic()+120}
         try:
             browser_host='127.0.0.1' if local_server else a.host
-            url=f"http://{browser_host}:{a.port}/#pair={browser_server.launch_ticket['key']}"
+            url=f"{scheme}://{browser_host}:{a.port}/#pair={browser_server.launch_ticket['key']}"
             if not open_startup_browser(url,a.browser):
                 terminal_status('BROWSER_OPEN_FAILED',group='browser')
                 print('Open the printed URL in your browser.',flush=True)
@@ -910,7 +1098,6 @@ def run_bridge(a,ip,p):
     finally:
         heartbeat_stop.set()
         heartbeat.join(timeout=1)
-        if server.bridge.stream360 is not None:server.bridge.stream360.stop(force=True)
         if server.bridge.discord_presence is not None:server.bridge.discord_presence.stop()
         if server.phone_host:
             try:server.browser_sessions.save_handoff(SESSION_HANDOFF_PATH,server.bridge.target)

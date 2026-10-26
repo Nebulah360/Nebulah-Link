@@ -1,4 +1,4 @@
-"""PC-owned default console selection. Public console access is always read-only."""
+"""PC-owned default console selection. The allow_writes flag stays off; locked writes use the action allowlist."""
 import ipaddress
 import json
 import os
@@ -12,7 +12,7 @@ DEFAULTS = {'default_console_ip':'','allow_writes':False}
 
 def validate(value):
     if not isinstance(value,dict) or set(value)-set(DEFAULTS):raise ValueError('Invalid settings.')
-    if value.get('allow_writes',False) is not False:raise ValueError('Free console access is always read-only.')
+    if value.get('allow_writes',False) is not False:raise ValueError('The free bridge does not accept an allow_writes setting.')
     address=value.get('default_console_ip','')
     if not isinstance(address,str):raise ValueError('Use a private IPv4 console address.')
     if address:
