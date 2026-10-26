@@ -7,7 +7,7 @@ const ThemeColor=(()=>{
   function hsv(a){let [r,g,b]=a.map(v=>v/255),hi=Math.max(r,g,b),lo=Math.min(r,g,b),d=hi-lo;let h=!d?0:hi===r?60*((g-b)/d%6):hi===g?60*((b-r)/d+2):60*((r-g)/d+4);return [(h+360)%360,hi?d/hi:0,hi];}
   function luminance(a){return a.map(n=>{n/=255;return n<=.04045?n/12.92:((n+.055)/1.055)**2.4}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);}
   function ink(a){return luminance(a)>.179?'#000000':'#FFFFFF';}
-  function readable(a){let b=[...a];while((luminance(b)+.05)/(luminance([23,35,44])+.05)<4.5)b=b.map(v=>Math.min(255,v+8));return hex(b);}
+  function readable(a){let b=[...a];while((luminance(b)+.05)/(luminance([36,56,71])+.05)<4.5)b=b.map(v=>Math.min(255,v+8));return hex(b);}
   return {parseHex,hex,rgb,hsv,ink,readable};
 })();
 if(typeof module!=='undefined')module.exports=ThemeColor;
