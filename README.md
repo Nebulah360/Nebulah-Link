@@ -1,5 +1,12 @@
 # Nebulah Link Basic
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="dist/brand/logo-dark.svg">
+  <img src="dist/brand/logo-color.svg" alt="Nebulah Link" width="320">
+</picture>
+
+[Product website](https://link.nebulah.app/) | [Try the sample workspace](https://link.nebulah.app/demo) | [User guide](docs/USER_GUIDE.md) | [Release boundaries](docs/REPOSITORY_POLICY.md)
+
 Nebulah Link brings your Xbox 360 into a browser on your Windows PC. It connects through your installed Xbox 360 Neighborhood. A phone on the same trusted network can view live console status through the PC.
 
 This is an early-access build. Console compatibility has been checked on a limited setup; more hardware testing is needed before a stable release.
@@ -7,7 +14,7 @@ This is an early-access build. Console compatibility has been checked on a limit
 ## Start on Windows
 
 1. Install Xbox 360 Neighborhood and confirm it can connect to your console.
-2. Download the packaged Basic release ZIP and extract the **whole** folder. A source checkout needs the USB engine build step below.
+2. Download the [Basic source ZIP](https://github.com/Nebulah360/Nebulah-Link/archive/refs/heads/main.zip) or clone this repository, then extract the **whole** folder. The source checkout needs the USB engine build step below. A source ZIP is not a signed installer.
 3. Double-click **Start Nebulah Link.cmd**. The launcher needs Python 3.10 or newer; it can offer to install Python through WinGet if needed.
 4. Keep the bridge window open. In the browser, connect using Neighborhood's default console or enter your console's private IP address.
 
@@ -47,9 +54,9 @@ The current Stream360 stack is not shipped. It needs a Nebulah rewrite before an
 
 ## USB Builder on Windows
 
-The USB Builder uses BadBuilder v2.1.0 under its BSD 3-Clause license. Its source and license are in `vendor/BadBuilder`. The packaged Basic release includes the compiled engine in `.local/badbuilder`. If using a source checkout instead, run `powershell -ExecutionPolicy Bypass -File tools/build_badbuilder.ps1` once with the .NET 10 SDK installed. Open the USB Builder tab to choose a currently connected USB disk, review the options, and type its exact `ERASE DISK N` confirmation. Downloads and extraction complete before formatting begins. The elevated engine rechecks disk identity and safety before any erase. No physical USB format/install has been hardware-tested through this Basic web route yet.
+The USB Builder uses BadBuilder v2.1.0 under its BSD 3-Clause license. Its source and license are in `vendor/BadBuilder`. The repository does not contain a compiled engine. Run `powershell -ExecutionPolicy Bypass -File tools/build_badbuilder.ps1` once with the .NET 10 SDK installed. Open the USB Builder tab to choose a currently connected USB disk, review the options, and type its exact `ERASE DISK N` confirmation. Downloads and extraction complete before formatting begins. The elevated engine rechecks disk identity and safety before any erase. No physical USB format/install has been hardware-tested through this Basic web route yet.
 
-## Read from Linux or macOS
+## Linux and macOS support
 
 Install Python 3.10 or newer and run `bash start-local.sh` from this folder. Enter the console's private IP under **Connect console**, or save it as the default in **Settings**. Direct XBDM on TCP port 730 provides live status, storage browsing, file download and upload, inspected launch, power, notify, and PC screen capture. Plugin load, controller pulses, and launch.ini still need Windows Neighborhood. The Linux path has been checked for the earlier read operations only. One Ubuntu VM connected through direct XBDM, discovered ten roots, browsed 74 HDD entries, refreshed status, and captured a screen. More Linux hardware setups remain to be tested.
 
@@ -69,4 +76,26 @@ For a new folder, stop both copies of Basic. Run `python tools/migrate-local.py 
 
 For help, include the displayed support code and what you were doing. Do not share private console information.
 
-[Website](https://nebulah.app/) · [Discord](https://discord.gg/QCQcXaz6RU) · [Report an issue](https://github.com/Nebulah360/Nebulah-Link/issues)
+[Website](https://link.nebulah.app/) · [Discord](https://discord.gg/QCQcXaz6RU) · [Report an issue](https://github.com/Nebulah360/Nebulah-Link/issues)
+
+
+## The refreshed workspace
+
+The approved Linkline identity now appears in the app header, browser icon, and Discord preview. The workspace groups Storage, Library, Discover, Console, USB builder, and Settings beside the active panel on desktop and in a compact navigation grid on smaller screens. Keyboard users can skip directly to the workspace; the active tool is exposed to assistive technology.
+
+New browsers start in Nebulah blue. Existing saved accent colors remain intact. The USB Builder shares the app's byte formatter so its script can load alongside the main app without a global declaration conflict.
+
+These are interface and source-maintenance changes. They do not grant new console capabilities, remove safety gates, or establish new hardware acceptance.
+
+## Source validation
+
+```text
+python -m unittest discover -s tests -v
+node --test tests/app_shell.test.cjs tests/console_actions.test.cjs
+node --check dist/app.js
+python -m compileall -q bridge tools
+```
+
+For browser checks, use a host installation of Playwright and set `NEBULAH_PLAYWRIGHT_MODULE` to its module path, then run `node --test tests/app_browser.test.cjs`. The test serves the real app files and intercepts API calls with disposable fixtures; no console, USB disk, or customer account is used. No production dependency is added.
+
+See [the source review](docs/WORKSPACE_REFRESH.md) for provenance and validation limits. Public source follows the Legacy model: a reviewed snapshot, not a copy of private development history.

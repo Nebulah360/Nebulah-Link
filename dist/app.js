@@ -21,7 +21,7 @@ async function api(action,data={},authorization){
   return result;
 }
 async function task(work){
-  $('message').textContent='Reading…';
+  $('message').textContent='Working…';
   try{await work();$('message').textContent='Done.';}catch(error){$('message').textContent=error.message;}
 }
 const knownTitles={'415607D1':'Call of Duty 2','415607E6':'Call of Duty 4','4156081C':'Call of Duty: World at War','41560817':'Call of Duty: Modern Warfare 2','41560855':'Call of Duty: Black Ops','415608CB':'Call of Duty: Modern Warfare 3','41560914':'Call of Duty: Advanced Warfare','415608FC':'Call of Duty: Ghosts','415608C3':'Call of Duty: Black Ops 2','4156091D':'Call of Duty: Black Ops 3'};
@@ -173,7 +173,7 @@ async function profiles(){
 function clearPrivate(){clearTimeout(keyTimeout);$('private-key').textContent='';}
 function selectTab(name){
   clearPrivate();for(const element of document.querySelectorAll('.view'))element.hidden=element.id!==name;$('storage-health-panel').hidden=name!=='storage';
-  for(const element of document.querySelectorAll('[data-tab]'))element.classList.toggle('selected',element.dataset.tab===name);
+  for(const element of document.querySelectorAll('[data-tab]')){const selected=element.dataset.tab===name;element.classList.toggle('selected',selected);element.setAttribute('aria-pressed',String(selected));}
 }
 for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>task(async()=>{selectTab(element.dataset.tab);if(element.dataset.tab==='library')await library();if(element.dataset.tab==='discover'&&typeof refreshDiscover==='function')await refreshDiscover();if(element.dataset.tab==='console'&&connected){await loadProfilePackages().catch(error=>{$('profile-list-status').textContent=error.message;});if(typeof refreshModules==='function')await refreshModules();}if(element.dataset.tab==='usb')await refreshUsbTools();if(element.dataset.tab==='settings'){const value=await api('settings/read');$('default-ip').value=value.default_console_ip;await profiles();}});
 $('install-plan-preview').onclick=()=>task(async()=>{

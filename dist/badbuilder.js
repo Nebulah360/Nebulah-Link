@@ -1,5 +1,4 @@
 'use strict';
-const bytesLabel=size=>size>=1073741824?(size/1073741824).toFixed(1)+' GiB':size>=1048576?(size/1048576).toFixed(1)+' MiB':size+' B';
 let usbBuilderDisks=[];
 async function refreshUsbInventory(){
   const host=$('usb-disks'),picker=$('badbuilder-disk');host.replaceChildren();if(picker)picker.replaceChildren();
