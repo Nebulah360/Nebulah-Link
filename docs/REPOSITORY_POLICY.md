@@ -1,6 +1,6 @@
 # Nebulah Link repository and release boundaries
 
-Effective 2026-10-14. Basic is the public source edition. A $5 one-time purchase will authorize a Pro download through the website. Code entry in Basic will authorize that download only; it will not turn Basic into Pro.
+Updated 2026-10-26. Basic is the public source edition. Pro accounts and protected tester downloads are managed through the product website; checkout remains disabled. Basic contains no Pro code-entry or local unlock control.
 
 | Repository | Visibility | Role |
 | --- | --- | --- |
@@ -78,14 +78,23 @@ These items stay open. This policy does not classify them as Basic or Pro:
 
 ## Payment and distribution
 
-LinkUI status and deep-link presence are Basic. Basic LinkUI sources that implement only those surfaces may live in the public Basic repository. Nebulah Editors, Title editors, editor recipes, and editor write UI stay in this private repository. LinkUI cover push to the console is deferred and is not classified here. Basic remains free for public trials. LinkUI development and testing do not imply account authentication, payment gating, or entitlement enforcement; those services remain pending.
+LinkUI status and deep-link presence are Basic. Basic LinkUI sources that implement only those surfaces may live in the public Basic repository. Nebulah Editors, Title editors, editor recipes, and editor write UI stay in the private Pro repository. LinkUI cover push to the console is deferred and is not classified here. Basic remains free for public trials. LinkUI development and testing do not imply account authentication, payment gating, or entitlement enforcement in the local app.
 
-Website checkout and license issuance are not implemented. Stripe is a candidate, not a selected dependency. Until the website provides a verified redemption and download endpoint, Basic must not display a working code-entry control or claim that payment is available. A code entered into public source cannot protect Pro code. The website must validate one-time purchase and deliver only a reviewed Pro build; neither edition may embed a signing secret.
+Pro access and protected downloads are managed on https://link.nebulah.app/link-pro using Nebulah accounts. Checkout remains disabled. This public Basic app has no Pro code-entry or local unlock control. A code entered into public source cannot protect Pro code; only the website may validate entitlements and deliver the reviewed Pro artifact. Neither edition may embed a signing secret.
 
 Pro is intended to ship as one Windows executable. A bundled executable is not strong obfuscation; source extraction and local patching remain possible. Keep proprietary SDK files, console binaries, keys, and local data outside the package. Sign distributable bytes when a signing identity is available and publish their SHA-256.
 
 ## Release gate
 
-October 25 licensing implementation status: local Basic source includes a native form that sends a single-use code directly to the fixed Nebulah HTTPS redemption endpoint. The sibling website backend is published and tested, but downloads remain closed until the owner approves a tested Pro executable. No editor code, signing secret, or local Pro-unlock handler was added to Basic. No public Basic release or push is implied by this local integration. The hardware and release gates below remain in force.
+October 26 source status: the public app is Basic, with no embedded Pro implementation. The separate website provides existing entitled accounts with the reviewed Pro tester; billing remains disabled. Source availability and a successful hosted demo are not Windows/Xbox, USB, or physical-phone acceptance. The hardware and release gates below remain in force.
 
 Release each edition only after relevant host tests, Windows/browser checks, real-console smoke tests, and exact artifact review. Structural XEX checks do not prove authenticity or console compatibility. Use only tracked source assets in packages; exclude `.local`, backups, tests, secrets, and console binaries. Do not claim a stable release from repository or packaging checks alone.
+
+
+## Curated publication workflow
+
+Use the former Legacy publication model recorded in public commit `679377c5de1e03a658e20d8fff0e3f8c8a37726c`: develop and test in local/private workspaces, then promote a reviewed public snapshot. Legacy remains a private preservation archive; never copy its mixed-feature history.
+
+Review the exact diff against the last public commit and the provenance of all imported assets. Run applicable host, browser, and boundary tests. For presentation-only changes, document that adapter behavior and existing hardware limits remain unchanged. Console behavior or distributable binary changes require their relevant hardware/artifact evidence before release. Never label host-only validation as hardware acceptance or stable status.
+
+Archive committed tracked bytes, publish their SHA-256, preserve earlier commits, and keep `.local`, credentials, backups, proprietary inputs, and unreviewed binaries out of public source. Do not synchronize private Main or Pro wholesale, rewrite public history, or publish a prebuilt USB engine merely because source checks pass.

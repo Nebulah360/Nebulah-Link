@@ -147,7 +147,7 @@ class DiscordPresence:
         activity = None if name is None else {
             'details': ('Playing ' + name)[:128], 'state': 'Xbox 360 via Nebulah Link',
             'assets': {'large_image': _image(title_id, asset_key), 'large_text': name},
-            'buttons': [{'label': 'Website', 'url': 'https://nebulah.app/'},
+            'buttons': [{'label': 'Website', 'url': 'https://link.nebulah.app/'},
                         {'label': 'Join Discord', 'url': 'https://discord.gg/QCQcXaz6RU'}]}
         pipe.write(_frame(1, {'cmd': 'SET_ACTIVITY', 'args': {'pid': os.getpid(), 'activity': activity},
                               'nonce': str(time.monotonic_ns())}))

@@ -7,7 +7,7 @@ const ThemeColor=(()=>{
   function hsv(a){let [r,g,b]=a.map(v=>v/255),hi=Math.max(r,g,b),lo=Math.min(r,g,b),d=hi-lo;let h=!d?0:hi===r?60*((g-b)/d%6):hi===g?60*((b-r)/d+2):60*((r-g)/d+4);return [(h+360)%360,hi?d/hi:0,hi];}
   function luminance(a){return a.map(n=>{n/=255;return n<=.04045?n/12.92:((n+.055)/1.055)**2.4}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);}
   function ink(a){return luminance(a)>.179?'#000000':'#FFFFFF';}
-  function readable(a){let b=[...a];while((luminance(b)+.05)/(luminance([25,31,29])+.05)<4.5)b=b.map(v=>Math.min(255,v+8));return hex(b);}
+  function readable(a){let b=[...a];while((luminance(b)+.05)/(luminance([23,35,44])+.05)<4.5)b=b.map(v=>Math.min(255,v+8));return hex(b);}
   return {parseHex,hex,rgb,hsv,ink,readable};
 })();
 if(typeof module!=='undefined')module.exports=ThemeColor;
@@ -20,8 +20,8 @@ if(typeof document!=='undefined'){
   canvas.onpointerdown=e=>{canvas.setPointerCapture(e.pointerId);point(e)};canvas.onpointermove=e=>{if(canvas.hasPointerCapture(e.pointerId))point(e)};canvas.onpointerup=e=>canvas.releasePointerCapture(e.pointerId);
   canvas.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const n=e.shiftKey?10:1;if(e.key==='ArrowLeft')hsv[0]=(hsv[0]-n+360)%360;if(e.key==='ArrowRight')hsv[0]=(hsv[0]+n)%360;if(e.key==='ArrowUp')hsv[1]=Math.min(1,hsv[1]+n/100);if(e.key==='ArrowDown')hsv[1]=Math.max(0,hsv[1]-n/100);fromWheel()};
   el('brightness').oninput=e=>{hsv[2]=Number(e.target.value)/100;fromWheel()};
-  el('accent-hex').oninput=e=>{const rgb=ThemeColor.parseHex(e.target.value);e.target.setCustomValidity(rgb?'':'Enter 3 or 6 hexadecimal digits.');el('color-error').textContent=rgb?'':'Enter a HEX value such as #C4F581.';if(rgb){const typed=e.target.value;apply(rgb);e.target.value=typed}};
+  el('accent-hex').oninput=e=>{const rgb=ThemeColor.parseHex(e.target.value);e.target.setCustomValidity(rgb?'':'Enter 3 or 6 hexadecimal digits.');el('color-error').textContent=rgb?'':'Enter a HEX value such as #74B5D6.';if(rgb){const typed=e.target.value;apply(rgb);e.target.value=typed}};
   for(const k of ['r','g','b'])el('accent-'+k).oninput=()=>{const inputs=['r','g','b'].map(k=>el('accent-'+k));const values=inputs.map(e=>Number(e.value));if(inputs.some(e=>e.value===''||!e.checkValidity())||values.some(v=>!Number.isInteger(v)||v<0||v>255)){el('color-error').textContent='RGB channels must be whole numbers from 0 to 255.';return}apply(values)};
-  el('appearance-open').onclick=()=>el('appearance-dialog').showModal();el('accent-reset').onclick=()=>apply([196,245,129]);
-  let initial=null;try{initial=ThemeColor.parseHex(localStorage.getItem('nebulah.accent')||'')}catch{}apply(initial||[196,245,129],false,false);
+  el('appearance-open').onclick=()=>el('appearance-dialog').showModal();el('accent-reset').onclick=()=>apply([116,181,214]);
+  let initial=null;try{initial=ThemeColor.parseHex(localStorage.getItem('nebulah.accent')||'')}catch{}apply(initial||[116,181,214],false,false);
 }

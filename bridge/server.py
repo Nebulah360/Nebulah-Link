@@ -803,6 +803,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.host_ok():return self.reply(403,{'error':'Host not allowed.'})
         files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript'),'/badbuilder.js':('badbuilder.js','text/javascript'),'/theme.js':('theme.js','text/javascript'),'/discover.js':('discover.js','text/javascript'),'/discord.js':('discord.js','text/javascript'),'/iso.js':('iso.js','text/javascript'),'/launcher_basic.js':('launcher_basic.js','text/javascript'),'/ftp.js':('ftp.js','text/javascript'),'/transfer.js':('transfer.js','text/javascript'),'/folder_transfer.js':('folder_transfer.js','text/javascript'),'/console_actions.js':('console_actions.js','text/javascript'),'/nebulah-n.png':('nebulah-n.png','image/png'),'/style.css':('style.css','text/css')}
+        files.update({
+            '/brand/logo-horizontal-dark.svg': ('brand/logo-horizontal-dark.svg', 'image/svg+xml'),
+            '/brand/logo-dark.svg': ('brand/logo-dark.svg', 'image/svg+xml'),
+            '/brand/favicon.svg': ('brand/favicon.svg', 'image/svg+xml'),
+            '/brand/favicon.ico': ('brand/favicon.ico', 'image/x-icon'),
+            '/brand/apple-touch-icon.png': ('brand/apple-touch-icon.png', 'image/png'),
+            '/brand/icon-192.png': ('brand/icon-192.png', 'image/png'),
+        })
         if self.path not in files:return self.reply(404,{'error':'Not found.'})
         name,kind=files[self.path]
         try:
