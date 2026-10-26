@@ -24,6 +24,7 @@ class AccessPolicyPortTests(unittest.TestCase):
             'ftp/status', 'ftp/start', 'ftp/stop',
             'controller/pulse', 'console/power', 'console/notify', 'launch',
             'plugins/load', 'plugins/unload', 'plugins/install', 'plugins/force-release',
+            'plugins/capabilities', 'plugins/managed-state',
             'console/launch-ini', 'console/launch-ini-switch',
             'console/launch-ini/plugins', 'console/launch-ini/plugins/preview',
             'console/launch-ini/plugins/save',

@@ -65,7 +65,11 @@ function fileRow(file,folder){
   if(file.directory)row.append(button('Open',async()=>{$('folder').value=path+'\\';await browse();}));
   else{
     if(!/(cpukey|keyvault|^kv)/.test(file.name.toLowerCase().replace(/[^a-z0-9]/g,'')))row.append(button('Download',async()=>{const value=await api('files/download',{path});const bytes=Uint8Array.from(atob(value.base64),c=>c.charCodeAt(0));saveDownload(value.filename,bytes);$('inspection').textContent='Download SHA-256: '+value.sha256;}));
-    if(/\.xex$/i.test(file.name)){row.append(button('Inspect',()=>inspect(path)));row.append(button('Launch',()=>validateAndLaunch(path)));}
+    if(/\.xex$/i.test(file.name)){
+      row.append(button('Inspect',()=>inspect(path)));
+      row.append(button('Launch',()=>validateAndLaunch(path)));
+      row.append(button('Module',()=>useAsModule(path)));
+    }
   }
   row.append(button('Favorite',()=>api('favorites/save',{path,name:file.name,directory:!!file.directory,mode:''})));
   return row;
@@ -171,7 +175,7 @@ function selectTab(name){
   clearPrivate();for(const element of document.querySelectorAll('.view'))element.hidden=element.id!==name;$('storage-health-panel').hidden=name!=='storage';
   for(const element of document.querySelectorAll('[data-tab]'))element.classList.toggle('selected',element.dataset.tab===name);
 }
-for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>task(async()=>{selectTab(element.dataset.tab);if(element.dataset.tab==='library')await library();if(element.dataset.tab==='discover'&&typeof refreshDiscover==='function')await refreshDiscover();if(element.dataset.tab==='console'&&connected)await loadProfilePackages().catch(error=>{$('profile-list-status').textContent=error.message;});if(element.dataset.tab==='usb')await refreshUsbTools();if(element.dataset.tab==='settings'){const value=await api('settings/read');$('default-ip').value=value.default_console_ip;await profiles();}});
+for(const element of document.querySelectorAll('[data-tab]'))element.onclick=()=>task(async()=>{selectTab(element.dataset.tab);if(element.dataset.tab==='library')await library();if(element.dataset.tab==='discover'&&typeof refreshDiscover==='function')await refreshDiscover();if(element.dataset.tab==='console'&&connected){await loadProfilePackages().catch(error=>{$('profile-list-status').textContent=error.message;});if(typeof refreshModules==='function')await refreshModules();}if(element.dataset.tab==='usb')await refreshUsbTools();if(element.dataset.tab==='settings'){const value=await api('settings/read');$('default-ip').value=value.default_console_ip;await profiles();}});
 $('install-plan-preview').onclick=()=>task(async()=>{
   const gamePath=$('install-plan-game-path').value;const selected=$('install-plan-file').files?.[0];
   if(!gamePath)throw Error('Select a saved XEX with Find content first.');
@@ -215,7 +219,6 @@ $('candidate-download').onclick=()=>{if(candidate)saveDownload('game-baseline-ca
 $('library-refresh').onclick=()=>task(library);
 $('scan').onclick=()=>task(async()=>{let value=await api('scan/start',{path:$('folder').value,formats:'xex',depth:6});while(value.state==='running'){ $('scan-status').textContent=value.visited+' folders · '+value.found+' XEX files';value=await api('scan/step',{id:value.id});} $('scan-status').textContent=value.state+' · '+value.found+' files · '+value.errors+' unavailable folders';await library();});
 $('capture').onclick=()=>task(async()=>{const value=await api('console/screenshot');$('screen').src='data:image/png;base64,'+value.png;$('screen').hidden=false;});
-$('modules').onclick=()=>task(async()=>{$('module-list').textContent=JSON.stringify(await api('plugins/list'),null,2);});
 $('cpu-key').onclick=()=>task(async()=>{clearPrivate();if(!confirm('Read and temporarily display the connected console CPU key on this trusted device? HTTP on this network is unencrypted.'))return;const ticket=await api('cpu-key/prepare');const value=await api('cpu-key/reveal',{confirmed:true,confirmation_ticket:ticket.confirmation_ticket});$('private-key').textContent=value.cpu_key;keyTimeout=setTimeout(clearPrivate,60000);});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearPrivate();});
 $('settings-form').onsubmit=event=>{event.preventDefault();task(()=>api('settings/save',{default_console_ip:$('default-ip').value.trim(),allow_writes:false}));};

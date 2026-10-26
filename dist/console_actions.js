@@ -102,3 +102,64 @@ if($('launch-plugin-refresh'))$('launch-plugin-refresh').onclick=()=>task(async(
   });
   host.append(save);
 });
+let measuredPlugin=null;
+function clearMeasuredPlugin(){measuredPlugin=null;if($('plugin-load'))$('plugin-load').disabled=true;}
+async function measurePlugin(){
+  const path=$('plugin-path').value.trim();
+  if(!path)throw Error('Enter a console XEX path.');
+  clearMeasuredPlugin();
+  const value=await api('games/inspect',{path});
+  const plugin=value.plugin===true&&typeof value.hash==='string';
+  measuredPlugin=plugin?{path,hash:value.hash}:null;
+  $('plugin-load').disabled=!plugin;
+  $('plugin-measure-result').textContent=plugin?'Plugin module. SHA-256 '+value.hash+'. Confirm load to send it.':'This XEX is not a plugin module. It was not loaded.';
+}
+async function useAsModule(path){
+  $('plugin-path').value=path;
+  selectTab('console');
+  await measurePlugin();
+}
+async function refreshModules(){
+  const caps=await api('plugins/capabilities');
+  $('plugin-capability').textContent=caps.reason||'Module control checked.';
+  const value=await api('plugins/list');
+  const host=$('module-list');
+  host.replaceChildren();
+  const items=(value.console&&value.console.items)||[];
+  if(!items.length){host.textContent='No modules reported.';return;}
+  for(const item of items){
+    const row=document.createElement('div');row.className='file';
+    const label=document.createElement('span');label.className='name';label.textContent=item.name;row.append(label);
+    if(caps.component){
+      try{
+        const managed=await api('plugins/managed-state',{name:item.name});
+        if(managed.state==='managed'){
+          const unload=document.createElement('button');
+          unload.type='button';unload.className='secondary';unload.textContent='Unload';
+          unload.onclick=()=>task(async()=>{
+            if(!confirm('Unload '+item.name+' through Companion? This can run once for that load.'))return;
+            const result=await api('plugins/unload',{name:item.name,confirmed:true,route:'component'});
+            $('plugin-measure-result').textContent=result.state==='unloaded'?item.name+' unloaded.':'Unload was not confirmed.';
+            await refreshModules();
+          });
+          row.append(unload);
+        }
+      }catch{/* A name that is not a module filename stays listed without an unload control. */}
+    }
+    host.append(row);
+  }
+}
+if($('plugin-path'))$('plugin-path').oninput=()=>{clearMeasuredPlugin();$('plugin-measure-result').textContent='Measure again before load.';};
+if($('plugin-measure'))$('plugin-measure').onclick=()=>task(measurePlugin);
+if($('modules'))$('modules').onclick=()=>task(refreshModules);
+if($('plugin-load-form'))$('plugin-load-form').onsubmit=event=>{
+  event.preventDefault();
+  task(async()=>{
+    if(!measuredPlugin||measuredPlugin.path!==$('plugin-path').value.trim())throw Error('Measure this path again before load.');
+    if(!confirm('Load '+measuredPlugin.path+'? It must match a reviewed build.'))return;
+    const result=await api('plugins/load',{path:measuredPlugin.path,sha256:measuredPlugin.hash,confirmed:true,route:'neighborhood'});
+    clearMeasuredPlugin();
+    $('plugin-measure-result').textContent=(result.name||'Module')+' loaded as '+result.state+'.';
+    await refreshModules();
+  });
+};

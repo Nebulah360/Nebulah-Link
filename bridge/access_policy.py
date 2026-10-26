@@ -19,7 +19,7 @@ BRIDGE_ACTIONS = frozenset('''connect status recovery/status browse browse-many 
     ftp/status ftp/start ftp/stop
     transfer/start transfer/chunk transfer/approve transfer/finish transfer/cancel
     transfer/status transfer/cleanup transfer/mkdir
-    plugins/list plugins/load plugins/unload plugins/install plugins/force-release plugins/managed-state
+    plugins/list plugins/load plugins/unload plugins/install plugins/force-release plugins/managed-state plugins/capabilities
     games/inspect games/propose games/list games/cover games/remove games/save
     games/addons games/title-update games/install-plan registry/list registry/check
     profiles/list profiles/save profiles/remove favorites/list favorites/save favorites/remove

@@ -484,7 +484,7 @@ class Bridge:
             if self.target is None:raise ValueError('Connect a console first.')
             from screenshot import capture
             return capture(self.target)
-        if action in ('plugins/load','plugins/unload','plugins/force-release','plugins/install','plugins/managed-state'):
+        if action in ('plugins/load','plugins/unload','plugins/force-release','plugins/install','plugins/managed-state','plugins/capabilities'):
             from plugin_adapter import NeighborhoodPluginAdapter
             return NeighborhoodPluginAdapter(self).dispatch(action, data)
         if action=='plugins/list':
@@ -576,7 +576,7 @@ class Bridge:
         if action.startswith('games/'):
             if action=='games/inspect':
                 path=safe_path(data.get('path'),self.drives)
-                v=self.inspect(path)
+                v=self.inspect(path, allow_module=True)
                 filename=path.rsplit('\\',1)[-1]
                 result={**v,'file':filename, 'plugin':v['plugin'], 'verification':verify_game(v,filename), 'read_only':True}
                 self.workspace().store.record_inspection(self.target,path,v)
