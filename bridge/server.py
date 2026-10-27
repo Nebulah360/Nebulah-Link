@@ -804,6 +804,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_ok():return self.reply(403,{'error':'Host not allowed.'})
         files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript'),'/badbuilder.js':('badbuilder.js','text/javascript'),'/theme.js':('theme.js','text/javascript'),'/discover.js':('discover.js','text/javascript'),'/discord.js':('discord.js','text/javascript'),'/iso.js':('iso.js','text/javascript'),'/launcher_basic.js':('launcher_basic.js','text/javascript'),'/ftp.js':('ftp.js','text/javascript'),'/transfer.js':('transfer.js','text/javascript'),'/folder_transfer.js':('folder_transfer.js','text/javascript'),'/console_actions.js':('console_actions.js','text/javascript'),'/nebulah-n.png':('nebulah-n.png','image/png'),'/style.css':('style.css','text/css')}
         files.update({
+            '/brand/symbol-color.svg': ('brand/symbol-color.svg', 'image/svg+xml'),
+            '/brand/symbol-white.svg': ('brand/symbol-white.svg', 'image/svg+xml'),
+            '/brand/symbol-dark.svg': ('brand/symbol-dark.svg', 'image/svg+xml'),
             '/brand/logo-horizontal-dark.svg': ('brand/logo-horizontal-dark.svg', 'image/svg+xml'),
             '/brand/logo-dark.svg': ('brand/logo-dark.svg', 'image/svg+xml'),
             '/brand/favicon.svg': ('brand/favicon.svg', 'image/svg+xml'),

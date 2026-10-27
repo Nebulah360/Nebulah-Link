@@ -31,7 +31,10 @@ test('workspace navigation describes the selected panel and clears private displ
 test('page IDs remain unique and tabs point at real sections', () => {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length);
-  assert.doesNotMatch(html, /\/brand\//);
+  assert.match(html, /\/brand\/symbol-color\.svg/);
+  assert.match(html, /\/brand\/favicon\.svg/);
+  assert.match(html, /\/brand\/icon-192\.png/);
+  assert.doesNotMatch(html, /nebulah-n\.png/);
   assert.match(html, /A clear view/);
   for (const match of html.matchAll(/data-tab="([^"]+)"/g)) assert.ok(ids.includes(match[1]));
 });

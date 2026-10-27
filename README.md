@@ -1,8 +1,8 @@
 # Nebulah Link Basic
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="dist/brand/logo-dark.svg">
-  <img src="dist/brand/logo-color.svg" alt="Nebulah Link" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="dist/brand/symbol-white.svg">
+  <img src="dist/brand/symbol-color.svg" alt="Nebulah Link" width="72">
 </picture>
 
 [Product website](https://link.nebulah.app/) | [Try the sample workspace](https://link.nebulah.app/demo) | [User guide](docs/USER_GUIDE.md) | [Release boundaries](docs/REPOSITORY_POLICY.md)

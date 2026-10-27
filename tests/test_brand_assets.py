@@ -33,7 +33,7 @@ class BrandAssetsTest(unittest.TestCase):
         return result
 
     def test_brand_assets_match_supplied_bytes_and_remain_same_origin(self):
-        for name in ('logo-horizontal-dark.svg', 'logo-dark.svg', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png', 'icon-192.png'):
+        for name in ('symbol-color.svg', 'symbol-white.svg', 'symbol-dark.svg', 'logo-horizontal-dark.svg', 'logo-dark.svg', 'favicon.svg', 'favicon.ico', 'apple-touch-icon.png', 'icon-192.png'):
             with self.subTest(name=name):
                 status, headers, body = self.request('/brand/' + name)
                 self.assertEqual(status, 200)
