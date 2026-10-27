@@ -15,7 +15,7 @@ test('classic page scripts share one scope without conflicting declarations', ()
 test('workspace navigation describes the selected panel and clears private display', () => {
   const source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
   const fn = source.slice(source.indexOf('function selectTab(name)'), source.indexOf("for(const element of document.querySelectorAll('[data-tab]'))element.onclick"));
-  const tabs = ['storage', 'library', 'console'].map(name => ({ dataset: { tab: name }, classList: { toggle() {} }, setAttribute(key, value) { this[key] = value; } }));
+  const tabs = ['storage', 'library', 'console'].map(name => ({ dataset: { tab: name }, classList: { selected: false, toggle(className, on) { if (className === 'selected') this.selected = on; } } }));
   const views = tabs.map(tab => ({ id: tab.dataset.tab, hidden: false }));
   const health = { hidden: false };
   let cleared = false;
@@ -24,16 +24,14 @@ test('workspace navigation describes the selected panel and clears private displ
   vm.runInContext(fn + "\nselectTab('console');", scope);
   assert.equal(cleared, true);
   assert.deepEqual(views.map(view => view.hidden), [true, true, false]);
-  assert.deepEqual(tabs.map(tab => tab['aria-pressed']), ['false', 'false', 'true']);
+  assert.deepEqual(tabs.map(tab => tab.classList.selected), [false, false, true]);
   assert.equal(health.hidden, true);
 });
 
-test('local brand assets exist and page IDs remain unique', () => {
+test('page IDs remain unique and tabs point at real sections', () => {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length);
-  for (const match of html.matchAll(/(?:src|href)="\/(brand\/[^"?#]+)(?:[?#][^"]*)?"/g)) assert.ok(fs.statSync(path.join(root, match[1])).isFile());
-  for (const match of html.matchAll(/data-tab="([^"]+)"[^>]*aria-controls="([^"]+)"/g)) {
-    assert.equal(match[1], match[2]);
-    assert.ok(ids.includes(match[2]));
-  }
+  assert.doesNotMatch(html, /\/brand\//);
+  assert.match(html, /A clear view/);
+  for (const match of html.matchAll(/data-tab="([^"]+)"/g)) assert.ok(ids.includes(match[1]));
 });

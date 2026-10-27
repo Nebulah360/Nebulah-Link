@@ -44,16 +44,12 @@ test('real Basic scripts mount every workspace, preserve appearance, and restric
       await page.setViewportSize({ width, height: 1000 });
       await page.goto(origin, { waitUntil: 'networkidle' });
       await page.waitForFunction(() => document.getElementById('connection').textContent.includes('PC paired'));
-      assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()), '#74B5D6');
-      const logo = await page.locator('.brand img').evaluate(image => ({ width: image.width, height: image.height, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight }));
-      assert.ok(logo.naturalWidth > 0);
-      assert.ok(Math.abs(logo.width / logo.height - logo.naturalWidth / logo.naturalHeight) < 0.05);
-      await page.keyboard.press('Tab');
-      assert.equal(await page.locator(':focus').innerText(), 'Skip to workspace');
+      assert.equal((await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())).toLowerCase(), '#c4f581');
+      assert.match(await page.locator('#brandmark').innerText(), /NEBULAH/);
       for (const tab of ['storage', 'library', 'discover', 'console', 'usb', 'settings']) {
         await page.locator(`[data-tab="${tab}"]`).click();
-        await page.waitForFunction(() => document.getElementById('message').textContent !== 'Working…');
-        assert.equal(await page.locator(`[data-tab="${tab}"]`).getAttribute('aria-pressed'), 'true');
+        await page.waitForFunction(() => document.getElementById('message').textContent !== 'Reading…');
+        assert.equal(await page.locator(`[data-tab="${tab}"]`).evaluate(element => element.classList.contains('selected')), true);
         assert.ok(await page.locator('#' + tab).isVisible());
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tab}: horizontal overflow at ${width}`);
       }
